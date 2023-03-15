@@ -1,0 +1,4 @@
+site_name: Mail Mon
+site_author: Tony Gilkerson
+nav:
+  - Home: index.md
