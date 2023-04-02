@@ -1,3 +1,3 @@
-module github.com/tonygilkerson/mail-mon
+module github.com/tonygilkerson/marty
 
 go 1.20
