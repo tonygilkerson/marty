@@ -5,7 +5,6 @@ package main
 //
 
 import (
-	"github.com/tonygilkerson/marty/pkg/fsm"
 	"testing"
 )
 
@@ -189,14 +188,14 @@ func resetContext() MartyContext {
 	}
 }
 
-func sendEvent(event fsm.EventID, sm *fsm.StateMachine, ctx *MartyContext) {
+// func sendEvent(event fsm.EventID, sm *fsm.StateMachine, ctx *MartyContext) {
 
-	err := sm.SendEvent(event, ctx)
-	if err == fsm.ErrEventRejected {
-		ctx.ErrorCount += 1
-		sm.Current = fsm.Default
-	}
+// 	err := sm.SendEvent(event, ctx)
+// 	if err == fsm.ErrEventRejected {
+// 		ctx.ErrorCount += 1
+// 		sm.Current = fsm.Default
+// 	}
 
-}
+// }
 
 
