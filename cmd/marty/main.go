@@ -197,28 +197,6 @@ var pirCh chan string
 var ctx MartyContext
 var sm *fsm.StateMachine
 
-func pirIsr(p machine.Pin) {
-
-	// disable the interrupt service routine since that's a good thing to do.
-	pirRight.SetInterrupt(machine.PinFalling|machine.PinRising, nil)
-
-	if p.Get() {
-
-		fmt.Printf("PIR arriving PinRising event\n")
-		// sendEvent(RightRising, sm, &ctx)
-		pirCh <- "RightRising"
-
-	} else {
-
-		fmt.Printf("PIR arriving PinFalling event\n")
-		// sendEvent(RightFalling, sm, &ctx)
-		pirCh <- "RightFalling"
-	}
-
-	// re-enable the interrupt service routine.
-	pirRight.SetInterrupt(machine.PinFalling|machine.PinRising, pirIsr)
-
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 //		main
@@ -239,25 +217,23 @@ func main() {
 	sm = newMartyFSM()
 	pirCh = make(chan string)
 	pirRight.Configure(machine.PinConfig{Mode: machine.PinInput})
-	pirRight.SetInterrupt(machine.PinFalling|machine.PinRising, pirIsr)
 	go eventConsumer(pirCh)
 
-	// pirRight.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
+	pirRight.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
 
-	// 	if p.Get() {
+		if p.Get() {
 
-	// 		fmt.Printf("PIR arriving PinRising event")
-	// 		// sendEvent(RightRising, sm, &ctx)
-	// 		// pirCh <- "RightRising"
+			fmt.Printf("PIR arriving PinRising event")
+			pirCh <- "RightRising"
 
-	// 	} else {
+		} else {
 
-	// 		fmt.Printf("PIR arriving PinFalling event")
-	// 		// sendEvent(RightFalling, sm, &ctx)
-	// 		// pirCh <- "RightFalling"
-	// 	}
+			fmt.Printf("PIR arriving PinFalling event")
+			pirCh <- "RightFalling"
+			
+		}
 
-	// })
+	})
 
 	//
 	// setup the display
