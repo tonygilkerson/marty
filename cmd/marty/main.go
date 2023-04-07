@@ -8,195 +8,19 @@ import (
 	"time"
 
 	"tinygo.org/x/drivers/st7789"
+	"tinygo.org/x/tinyfont"
+	"tinygo.org/x/tinyfont/freemono"
+
 	// "tinygo.org/x/tinyfont"
 	// "tinygo.org/x/tinyfont/freemono"
 
-	"github.com/tonygilkerson/marty/pkg/fsm"
+	"github.com/tonygilkerson/marty/pkg/marty"
 )
 
 const (
-	// States
-	// Default    fsm.StateID = "Default"
-	Arriving   fsm.StateID = "Arriving"
-	Arrived    fsm.StateID = "Arrived"
-	Departing  fsm.StateID = "Departing"
-	Departed   fsm.StateID = "Departed"
-	FalseAlarm fsm.StateID = "FalseAlarm"
-	Error      fsm.StateID = "Error"
-
-	//Events
-	RightRising  fsm.EventID = "RightRising"
-	RightFalling fsm.EventID = "RightFalling"
-	LeftRising   fsm.EventID = "LeftRising"
-	LeftFalling  fsm.EventID = "LeftFalling"
-	Reset        fsm.EventID = "Reset"
+	pirArrive = machine.GP20
+	pirDepart = machine.GP21
 )
-
-type MartyContext struct {
-	DefaultCount    int
-	ArrivedCount    int
-	ArrivingCount   int
-	DepartedCount   int
-	DepartingCount  int
-	ErrorCount      int
-	FalseAlarmCount int
-}
-
-func (c *MartyContext) String() string {
-	cCopy := *c
-	return fmt.Sprintf("MartyContext: %+v\n", cCopy)
-}
-
-// DefaultAction
-type DefaultAction struct{}
-
-func (a *DefaultAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
-
-	ctx := eventCtx.(*MartyContext)
-	ctx.DefaultCount += 1
-
-	log.Printf("DefaultAction\n\n")
-	return fsm.NoOp
-}
-
-// ArrivedAction
-type ArrivedAction struct{}
-
-func (a *ArrivedAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
-
-	ctx := eventCtx.(*MartyContext)
-	ctx.ArrivedCount += 1
-
-	log.Printf("ArrivedAction\n")
-	return Reset
-}
-
-// ArrivingAction
-type ArrivingAction struct{}
-
-func (a *ArrivingAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
-
-	ctx := eventCtx.(*MartyContext)
-	ctx.ArrivingCount += 1
-
-	log.Printf("ArrivingAction\n")
-	return fsm.NoOp
-}
-
-// DepartedAction
-type DepartedAction struct{}
-
-func (a *DepartedAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
-
-	ctx := eventCtx.(*MartyContext)
-	ctx.DepartedCount += 1
-
-	log.Printf("DepartedAction\n")
-	return Reset
-}
-
-// DepartingAction
-type DepartingAction struct{}
-
-func (a *DepartingAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
-
-	ctx := eventCtx.(*MartyContext)
-	ctx.DepartingCount += 1
-
-	log.Printf("DepartingAction\n")
-	return fsm.NoOp
-}
-
-// ErrorAction
-type ErrorAction struct{}
-
-func (a *ErrorAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
-
-	ctx := eventCtx.(*MartyContext)
-	ctx.ErrorCount += 1
-
-	log.Printf("ErrorAction\n")
-	return fsm.NoOp
-}
-
-// FalseAlarmAction
-type FalseAlarmAction struct{}
-
-func (a *FalseAlarmAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
-
-	ctx := eventCtx.(*MartyContext)
-	ctx.FalseAlarmCount += 1
-
-	log.Printf("FalseAlarmAction\n")
-	return Reset
-}
-
-func newMartyFSM() *fsm.StateMachine {
-
-	fsm := fsm.StateMachine{
-		Current:  fsm.Default,
-		Previous: fsm.Default,
-		States: fsm.States{
-
-			fsm.Default: fsm.State{
-				Action: &DefaultAction{},
-				Events: fsm.Events{
-					RightRising: Arriving,
-					LeftRising:  Departing,
-				},
-			},
-
-			Arriving: fsm.State{
-				Action: &ArrivingAction{},
-				Events: fsm.Events{
-					LeftRising:   Arrived,
-					RightFalling: FalseAlarm,
-				},
-			},
-
-			Arrived: fsm.State{
-				Action: &ArrivedAction{},
-				Events: fsm.Events{
-					Reset: fsm.Default,
-				},
-			},
-
-			Departing: fsm.State{
-				Action: &DepartingAction{},
-				Events: fsm.Events{
-					LeftFalling: FalseAlarm,
-					RightRising: Departed,
-				},
-			},
-
-			Departed: fsm.State{
-				Action: &DepartedAction{},
-				Events: fsm.Events{
-					Reset: fsm.Default,
-				},
-			},
-
-			FalseAlarm: fsm.State{
-				Action: &FalseAlarmAction{},
-				Events: fsm.Events{
-					Reset: fsm.Default,
-				},
-			},
-		},
-	}
-
-	// log.Printf("\n-------\n\n%+v\n\n--------\n",fsm)
-
-	return &fsm
-}
-
-const (
-	pirRight = machine.GP21
-)
-var pirCh chan string
-var ctx MartyContext
-var sm *fsm.StateMachine
-
 
 ///////////////////////////////////////////////////////////////////////////////
 //		main
@@ -214,23 +38,44 @@ func main() {
 	runLight(led, 10)
 
 	// Create a new instance of the state machine.
-	sm = newMartyFSM()
-	pirCh = make(chan string)
-	pirRight.Configure(machine.PinConfig{Mode: machine.PinInput})
-	go eventConsumer(pirCh)
+	mboxMarty := marty.New()
 
-	pirRight.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
+	var pirCh chan string
+	pirCh = make(chan string)
+	go eventConsumer(pirCh, &mboxMarty)
+
+	// Arrive Sensor
+	pirArrive.Configure(machine.PinConfig{Mode: machine.PinInput})
+	pirArrive.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
 
 		if p.Get() {
 
-			fmt.Printf("PIR arriving PinRising event")
+			fmt.Printf("ISR PIR Arriving RightRising PinRising\n")
 			pirCh <- "RightRising"
 
 		} else {
 
-			fmt.Printf("PIR arriving PinFalling event")
+			fmt.Printf("ISR PIR Arriving RightFalling PinFalling\n")
 			pirCh <- "RightFalling"
-			
+
+		}
+
+	})
+
+	// Depart Sensor
+	pirDepart.Configure(machine.PinConfig{Mode: machine.PinInput})
+	pirDepart.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
+
+		if p.Get() {
+
+			fmt.Printf("ISR PIR Departing LeftRising PinRising\n")
+			pirCh <- "LeftRising"
+
+		} else {
+
+			fmt.Printf("ISR PIR Departing LeftFalling PinFalling\n")
+			pirCh <- "LeftFalling"
+
 		}
 
 	})
@@ -274,7 +119,7 @@ func main() {
 	// black := color.RGBA{0, 0, 0, 255}
 	// white := color.RGBA{255, 255, 255, 255}
 	// blue := color.RGBA{0, 0, 255, 255}
-	// green := color.RGBA{0, 255, 0, 255}
+	green := color.RGBA{0, 255, 0, 255}
 
 	//
 	// Setup input buttons (the ones on the display)
@@ -313,6 +158,7 @@ func main() {
 	//
 	//			Main Loop
 	//
+	var currentStatus, lastStatus int
 	for {
 
 		if keyPressed == key0 {
@@ -322,6 +168,7 @@ func main() {
 		if keyPressed == key1 {
 			keyPressed = 0
 			log.Printf("key1\n")
+			mboxMarty.ResetContext()
 		}
 		if keyPressed == key2 {
 			keyPressed = 0
@@ -335,12 +182,23 @@ func main() {
 		//
 		// Display
 		//
-		// cls(&display)
-		msg := fmt.Sprintf("DFT: %v\nAed: %v\nAng: %v\nDed: %v\nDng: %v\nErr: %v\nFls: %v",ctx.DefaultCount,ctx.ArrivedCount,ctx.ArrivedCount,ctx.DepartedCount,ctx.DepartingCount,ctx.ErrorCount,ctx.FalseAlarmCount)
-		// tinyfont.WriteLine(&display, &freemono.Regular12pt7b, 10, 30, msg, green)
-		time.Sleep(time.Millisecond * 3000)
-		fmt.Printf("%v\n",msg)
-		fmt.Printf(".")
+		currentStatus = mboxMarty.Ctx.ArrivedCount + mboxMarty.Ctx.DepartedCount + mboxMarty.Ctx.ErrorCount + mboxMarty.Ctx.FalseAlarmCount
+
+		if currentStatus != lastStatus {
+			lastStatus = currentStatus
+
+			cls(&display)
+			msg := fmt.Sprintf("Arrived:  %v\nDeparted: %v\nErr:      %v\nFalse:    %v",
+				mboxMarty.Ctx.ArrivedCount,
+				mboxMarty.Ctx.DepartedCount,
+				mboxMarty.Ctx.ErrorCount,
+				mboxMarty.Ctx.FalseAlarmCount)
+
+			tinyfont.WriteLine(&display, &freemono.Regular18pt7b, 10, 30, msg, green)
+			fmt.Printf("%v\n\n", msg)
+		}
+		time.Sleep(time.Millisecond * 200)
+		runLight(led, 1)
 	}
 
 }
@@ -367,27 +225,29 @@ func cls(d *st7789.Device) {
 	d.FillScreen(black)
 }
 
-func sendEvent(event fsm.EventID, sm *fsm.StateMachine, ctx *MartyContext) {
-
-	err := sm.SendEvent(event, ctx)
-	if err == fsm.ErrEventRejected {
-		ctx.ErrorCount += 1
-		sm.Current = fsm.Default
-	}
-
-}
-
-func eventConsumer(ch chan string) {
+// eventConsumer will receive event from the ISRs and send them to the state machine
+func eventConsumer(ch chan string, m *marty.Marty) {
 	for {
 		// Wait for a change in position
 		event := <-ch
-		fmt.Printf("event: %v ", event)
+		// fmt.Printf("event: %v\n", event)
 
+		// DEVTODO consider making the events of type fmt.EventID so I can remove the if statement
 		if event == "RightRising" {
-			sendEvent("RightRising",sm,&ctx)
+			fmt.Printf("SEND: %v\n", marty.RightRising)
+			m.SendEvent(marty.RightRising)
 		}
 		if event == "RightFalling" {
-			sendEvent("RightFalling",sm,&ctx)
-		}		
+			fmt.Printf("SEND: %v\n", marty.RightFalling)
+			m.SendEvent(marty.RightFalling)
+		}
+		if event == "LeftRising" {
+			fmt.Printf("SEND: %v\n", marty.LeftRising)
+			m.SendEvent(marty.LeftRising)
+		}
+		if event == "LeftFalling" {
+			m.SendEvent(marty.LeftFalling)
+			fmt.Printf("SEND: %v\n", marty.LeftFalling)
+		}
 	}
 }
