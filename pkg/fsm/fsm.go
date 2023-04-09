@@ -104,6 +104,7 @@ func (s *StateMachine) SendEvent(event EventID, eventCtx EventContext) error {
 		// Execute the next state's action and loop over again if the event returned
 		// is not a no-op.
 		nextEvent := state.Action.Execute(eventCtx)
+
 		if nextEvent == NoOp {
 			return nil
 		}

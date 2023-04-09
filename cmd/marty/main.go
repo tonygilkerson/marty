@@ -50,13 +50,13 @@ func main() {
 
 		if p.Get() {
 
-			fmt.Printf("ISR PIR Arriving RightRising PinRising\n")
-			pirCh <- "RightRising"
+			fmt.Printf("ISR PIR Arriving ArriveRising PinRising\n")
+			pirCh <- "ArriveRising"
 
 		} else {
 
-			fmt.Printf("ISR PIR Arriving RightFalling PinFalling\n")
-			pirCh <- "RightFalling"
+			fmt.Printf("ISR PIR Arriving ArriveFalling PinFalling\n")
+			pirCh <- "ArriveFalling"
 
 		}
 
@@ -68,13 +68,13 @@ func main() {
 
 		if p.Get() {
 
-			fmt.Printf("ISR PIR Departing LeftRising PinRising\n")
-			pirCh <- "LeftRising"
+			fmt.Printf("ISR PIR Departing DepartRising PinRising\n")
+			pirCh <- "DepartRising"
 
 		} else {
 
-			fmt.Printf("ISR PIR Departing LeftFalling PinFalling\n")
-			pirCh <- "LeftFalling"
+			fmt.Printf("ISR PIR Departing DepartFalling PinFalling\n")
+			pirCh <- "DepartFalling"
 
 		}
 
@@ -233,21 +233,21 @@ func eventConsumer(ch chan string, m *marty.Marty) {
 		// fmt.Printf("event: %v\n", event)
 
 		// DEVTODO consider making the events of type fmt.EventID so I can remove the if statement
-		if event == "RightRising" {
-			fmt.Printf("SEND: %v\n", marty.RightRising)
-			m.SendEvent(marty.RightRising)
+		if event == "ArriveRising" {
+			fmt.Printf("SEND: %v\n", marty.ArriveRising)
+			m.SendEvent(marty.ArriveRising)
 		}
-		if event == "RightFalling" {
-			fmt.Printf("SEND: %v\n", marty.RightFalling)
-			m.SendEvent(marty.RightFalling)
+		if event == "ArriveFalling" {
+			fmt.Printf("SEND: %v\n", marty.ArriveFalling)
+			m.SendEvent(marty.ArriveFalling)
 		}
-		if event == "LeftRising" {
-			fmt.Printf("SEND: %v\n", marty.LeftRising)
-			m.SendEvent(marty.LeftRising)
+		if event == "DepartRising" {
+			fmt.Printf("SEND: %v\n", marty.DepartRising)
+			m.SendEvent(marty.DepartRising)
 		}
-		if event == "LeftFalling" {
-			m.SendEvent(marty.LeftFalling)
-			fmt.Printf("SEND: %v\n", marty.LeftFalling)
+		if event == "DepartFalling" {
+			m.SendEvent(marty.DepartFalling)
+			fmt.Printf("SEND: %v\n", marty.DepartFalling)
 		}
 	}
 }

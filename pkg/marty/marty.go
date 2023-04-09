@@ -7,7 +7,6 @@ import (
 	"github.com/tonygilkerson/marty/pkg/fsm"
 )
 
-
 const (
 	// States
 	Arriving   fsm.StateID = "Arriving"
@@ -18,13 +17,12 @@ const (
 	Error      fsm.StateID = "Error"
 
 	//Events
-	RightRising  fsm.EventID = "RightRising"
-	RightFalling fsm.EventID = "RightFalling"
-	LeftRising   fsm.EventID = "LeftRising"
-	LeftFalling  fsm.EventID = "LeftFalling"
-	Reset        fsm.EventID = "Reset"
+	ArriveRising  fsm.EventID = "ArriveRising"
+	ArriveFalling fsm.EventID = "ArriveFalling"
+	DepartRising  fsm.EventID = "DepartRising"
+	DepartFalling fsm.EventID = "DepartFalling"
+	Reset         fsm.EventID = "Reset"
 )
-
 
 type Context struct {
 	DefaultCount    int
@@ -37,8 +35,8 @@ type Context struct {
 }
 
 type Marty struct {
-	StateMachine  fsm.StateMachine
-	Ctx Context
+	StateMachine fsm.StateMachine
+	Ctx          Context
 }
 
 func (c *Context) String() string {
@@ -52,12 +50,22 @@ func (m *Marty) SendEvent(event fsm.EventID) {
 	err := m.StateMachine.SendEvent(event, &m.Ctx)
 	if err == fsm.ErrEventRejected {
 		m.Ctx.ErrorCount += 1
-	  m.StateMachine.Current = fsm.Default
+		m.StateMachine.Current = fsm.Default
 	}
 
 }
 
-
+func (m *Marty) ResetContext() {
+	m.Ctx = Context{
+		DefaultCount:    0,
+		ArrivedCount:    0,
+		ArrivingCount:   0,
+		DepartedCount:   0,
+		DepartingCount:  0,
+		ErrorCount:      0,
+		FalseAlarmCount: 0,
+	}
+}
 
 // DefaultAction
 type DefaultAction struct{}
@@ -154,16 +162,18 @@ func New() Marty {
 			fsm.Default: fsm.State{
 				Action: &DefaultAction{},
 				Events: fsm.Events{
-					RightRising: Arriving,
-					LeftRising:  Departing,
+					ArriveRising:  Arriving,
+					DepartRising:  Departing,
+					ArriveFalling: fsm.Default,
+					DepartFalling: fsm.Default,
 				},
 			},
 
 			Arriving: fsm.State{
 				Action: &ArrivingAction{},
 				Events: fsm.Events{
-					LeftRising:   Arrived,
-					RightFalling: FalseAlarm,
+					DepartRising:  Arrived,
+					ArriveFalling: FalseAlarm,
 				},
 			},
 
@@ -177,8 +187,8 @@ func New() Marty {
 			Departing: fsm.State{
 				Action: &DepartingAction{},
 				Events: fsm.Events{
-					LeftFalling: FalseAlarm,
-					RightRising: Departed,
+					DepartFalling: FalseAlarm,
+					ArriveRising:  Departed,
 				},
 			},
 
@@ -200,5 +210,3 @@ func New() Marty {
 
 	return marty
 }
-
-

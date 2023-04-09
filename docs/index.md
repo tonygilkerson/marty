@@ -12,9 +12,9 @@ The PIR motion sensors will pull a pin high when movement is detected, therefor 
 
 | Event | Description                                 |
 | ----- | ------------------------------------------- |
-| RU    | "Right Up" - Right PIR `PinRising` event    |
-| RD    | "Right Down" - Right PIR `PinFalling` event |
-| LU    | "Left Up" - Left PIR `PinRising` event      |
-| LD    | "Left Down" - Left PIR `PinFalling` event   |
+| AU    | "Arrive Up" - Arrive PIR `PinRising` event    |
+| AD    | "Arrive Down" - Arrive PIR `PinFalling` event |
+| DU    | "Depart Up" - Depart PIR `PinRising` event      |
+| DD    | "Depart Down" - Depart PIR `PinFalling` event   |
 
 >Note: Any unhandled event go to the `Error` state

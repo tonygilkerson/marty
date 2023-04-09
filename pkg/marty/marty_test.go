@@ -6,7 +6,6 @@ package marty
 
 import (
 	"testing"
-
 )
 
 func TestMartyStateMachine(t *testing.T) {
@@ -17,9 +16,9 @@ func TestMartyStateMachine(t *testing.T) {
 	//
 	// A car arriving
 	//
-	m.Ctx = resetContext()
-	m.SendEvent(RightRising)
-	m.SendEvent(LeftRising)
+	m.ResetContext()
+	m.SendEvent(ArriveRising)
+	m.SendEvent(DepartRising)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 1 &&
@@ -36,9 +35,9 @@ func TestMartyStateMachine(t *testing.T) {
 	//
 	// A car departing
 	//
-	m.Ctx = resetContext()
-	m.SendEvent(LeftRising)
-	m.SendEvent(RightRising)
+	m.ResetContext()
+	m.SendEvent(DepartRising)
+	m.SendEvent(ArriveRising)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -52,14 +51,13 @@ func TestMartyStateMachine(t *testing.T) {
 		t.Errorf("A car departing\nexpected: {DefaultCount:1 ArrivedCount:0 ArrivingCount:0 DepartedCount:1 DepartingCount:1 ErrorCount:0 FalseAlarmCount:0}\ngot:      %+v", m.Ctx)
 	}
 
-
 	//
 	// FalseAlarm from the Arriving direction
 	// A car approaching but stops short, turns around, backups up or something
 	//
-	m.Ctx = resetContext()
-	m.SendEvent(RightRising)
-	m.SendEvent(RightFalling)
+	m.ResetContext()
+	m.SendEvent(ArriveRising)
+	m.SendEvent(ArriveFalling)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -76,9 +74,9 @@ func TestMartyStateMachine(t *testing.T) {
 	//
 	// FalseAlarm from the Departing direction
 	//
-	m.Ctx = resetContext()
-	m.SendEvent(LeftRising)
-	m.SendEvent(LeftFalling)
+	m.ResetContext()
+	m.SendEvent(DepartRising)
+	m.SendEvent(DepartFalling)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -92,14 +90,13 @@ func TestMartyStateMachine(t *testing.T) {
 		t.Errorf("FalseAlarm from the Departing direction\nexpected: {DefaultCount:1 ArrivedCount:0 ArrivingCount:1 DepartedCount:0 DepartingCount:0 ErrorCount:0 FalseAlarmCount:1}\ngot:      %+v", m.Ctx)
 	}
 
-
 	//
 	// Error from the Departing direction
 	// Error - should never get two Rising events in a row from the same direction
 	//
-	m.Ctx = resetContext()
-	m.SendEvent(LeftRising)
-	m.SendEvent(LeftRising)
+	m.ResetContext()
+	m.SendEvent(DepartRising)
+	m.SendEvent(DepartRising)
 
 	if m.Ctx.DefaultCount == 0 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -117,9 +114,9 @@ func TestMartyStateMachine(t *testing.T) {
 	// Error from the Arriving direction
 	// Error - should never get two Rising events in a row from the same direction
 	//
-	m.Ctx = resetContext()
-	m.SendEvent(RightRising)
-	m.SendEvent(RightRising)
+	m.ResetContext()
+	m.SendEvent(ArriveRising)
+	m.SendEvent(ArriveRising)
 
 	if m.Ctx.DefaultCount == 0 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -134,33 +131,54 @@ func TestMartyStateMachine(t *testing.T) {
 	}
 
 	//
+	// Default goes to Default if LD or RD
+	//
+	m.ResetContext()
+	m.SendEvent(DepartRising)
+	m.SendEvent(ArriveRising)
+	m.SendEvent(ArriveFalling)
+	m.SendEvent(DepartFalling)
+
+	if m.Ctx.DefaultCount == 3 &&
+		m.Ctx.ArrivedCount == 0 &&
+		m.Ctx.ArrivingCount == 0 &&
+		m.Ctx.DepartedCount == 1 &&
+		m.Ctx.DepartingCount == 1 &&
+		m.Ctx.ErrorCount == 0 &&
+		m.Ctx.FalseAlarmCount == 0 {
+		// all good
+	} else {
+		t.Errorf("Error default goes to default\nexpected: {DefaultCount:3 ArrivedCount:0 ArrivingCount:0 DepartedCount:1 DepartingCount:1 ErrorCount:0 FalseAlarmCount:0}\ngot:      %+v", m.Ctx)
+	}
+
+	//
 	// Combination of events
 	//
-	m.Ctx = resetContext()
-	
+	m.ResetContext()
+
 	// A car arriving
-	m.SendEvent(RightRising)
-	m.SendEvent(LeftRising)
+	m.SendEvent(ArriveRising)
+	m.SendEvent(DepartRising)
 
 	// A car departing
-	m.SendEvent(LeftRising)
-	m.SendEvent(RightRising)
+	m.SendEvent(DepartRising)
+	m.SendEvent(ArriveRising)
 
 	// FalseAlarm from the Arriving direction
-	m.SendEvent(RightRising)
-	m.SendEvent(RightFalling)
+	m.SendEvent(ArriveRising)
+	m.SendEvent(ArriveFalling)
 
 	// FalseAlarm from the Departing direction
-	m.SendEvent(LeftRising)
-	m.SendEvent(LeftFalling)
+	m.SendEvent(DepartRising)
+	m.SendEvent(DepartFalling)
 
 	// Error from the Departing direction
-	m.SendEvent(LeftRising)
-	m.SendEvent(LeftRising)
+	m.SendEvent(DepartRising)
+	m.SendEvent(DepartRising)
 
 	// Error from the Arriving direction
-	m.SendEvent(RightRising)
-	m.SendEvent(RightRising)
+	m.SendEvent(ArriveRising)
+	m.SendEvent(ArriveRising)
 
 	if m.Ctx.DefaultCount == 4 &&
 		m.Ctx.ArrivedCount == 1 &&
@@ -175,18 +193,3 @@ func TestMartyStateMachine(t *testing.T) {
 	}
 
 }
-
-func resetContext() Context {
-	return Context{
-		DefaultCount:    0,
-		ArrivedCount:    0,
-		ArrivingCount:   0,
-		DepartedCount:   0,
-		DepartingCount:  0,
-		ErrorCount:      0,
-		FalseAlarmCount: 0,
-	}
-}
-
-
-
