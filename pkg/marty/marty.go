@@ -17,11 +17,11 @@ const (
 	Error      fsm.StateID = "Error"
 
 	//Events
-	ArriveRising  fsm.EventID = "ArriveRising"
-	ArriveFalling fsm.EventID = "ArriveFalling"
-	DepartRising  fsm.EventID = "DepartRising"
-	DepartFalling fsm.EventID = "DepartFalling"
-	Reset         fsm.EventID = "Reset"
+	FarRising   fsm.EventID = "FarRising"
+	FarFalling  fsm.EventID = "FarFalling"
+	NearRising  fsm.EventID = "NearRising"
+	NearFalling fsm.EventID = "NearFalling"
+	Reset       fsm.EventID = "Reset"
 )
 
 type Context struct {
@@ -47,8 +47,11 @@ func (c *Context) String() string {
 // sendEvent sends an event to the state machine.
 func (m *Marty) SendEvent(event fsm.EventID) {
 
+	log.Printf("SendEvent: %v\n", event)
+
 	err := m.StateMachine.SendEvent(event, &m.Ctx)
 	if err == fsm.ErrEventRejected {
+		log.Printf("Error: %v\n", event)
 		m.Ctx.ErrorCount += 1
 		m.StateMachine.Current = fsm.Default
 	}
@@ -75,7 +78,7 @@ func (a *DefaultAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
 	ctx := eventCtx.(*Context)
 	ctx.DefaultCount += 1
 
-	log.Printf("DefaultAction\n\n")
+	log.Printf("DefaultAction\n")
 	return fsm.NoOp
 }
 
@@ -91,6 +94,17 @@ func (a *ArrivedAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
 	return Reset
 }
 
+type DepartedAction struct{}
+
+func (a *DepartedAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
+
+	ctx := eventCtx.(*Context)
+	ctx.DepartedCount += 1
+
+	log.Printf("DepartedAction\n")
+	return Reset
+}
+
 // ArrivingAction
 type ArrivingAction struct{}
 
@@ -101,18 +115,6 @@ func (a *ArrivingAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
 
 	log.Printf("ArrivingAction\n")
 	return fsm.NoOp
-}
-
-// DepartedAction
-type DepartedAction struct{}
-
-func (a *DepartedAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
-
-	ctx := eventCtx.(*Context)
-	ctx.DepartedCount += 1
-
-	log.Printf("DepartedAction\n")
-	return Reset
 }
 
 // DepartingAction
@@ -126,6 +128,9 @@ func (a *DepartingAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
 	log.Printf("DepartingAction\n")
 	return fsm.NoOp
 }
+
+// DepartedAction
+
 
 // ErrorAction
 type ErrorAction struct{}
@@ -151,7 +156,7 @@ func (a *FalseAlarmAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
 	return Reset
 }
 
-func New() Marty {
+func New() *Marty {
 
 	var marty Marty
 	marty.StateMachine = fsm.StateMachine{
@@ -162,18 +167,18 @@ func New() Marty {
 			fsm.Default: fsm.State{
 				Action: &DefaultAction{},
 				Events: fsm.Events{
-					ArriveRising:  Arriving,
-					DepartRising:  Departing,
-					ArriveFalling: fsm.Default,
-					DepartFalling: fsm.Default,
+					FarRising:   Arriving,
+					NearRising:  Departing,
+					FarFalling:  fsm.Default,
+					NearFalling: fsm.Default,
 				},
 			},
 
 			Arriving: fsm.State{
 				Action: &ArrivingAction{},
 				Events: fsm.Events{
-					DepartRising:  Arrived,
-					ArriveFalling: FalseAlarm,
+					FarFalling: FalseAlarm,
+					NearRising: Arrived,
 				},
 			},
 
@@ -187,8 +192,8 @@ func New() Marty {
 			Departing: fsm.State{
 				Action: &DepartingAction{},
 				Events: fsm.Events{
-					DepartFalling: FalseAlarm,
-					ArriveRising:  Departed,
+					NearFalling: FalseAlarm,
+					FarRising:   Departed,
 				},
 			},
 
@@ -208,5 +213,5 @@ func New() Marty {
 		},
 	}
 
-	return marty
+	return &marty
 }

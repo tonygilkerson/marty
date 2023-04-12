@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	pirArrive = machine.GP20
-	pirDepart = machine.GP21
+	pirFar  = machine.GP20
+	pirNear = machine.GP21
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -42,40 +42,29 @@ func main() {
 
 	var pirCh chan string
 	pirCh = make(chan string)
-	go eventConsumer(pirCh, &mboxMarty)
+	go eventConsumer(pirCh, mboxMarty)
 
 	// Arrive Sensor
-	pirArrive.Configure(machine.PinConfig{Mode: machine.PinInput})
-	pirArrive.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
+	// pirFar.Configure(machine.PinConfig{Mode: machine.PinInput})
+	pirFar.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
+	pirFar.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
 
 		if p.Get() {
-
-			fmt.Printf("ISR PIR Arriving ArriveRising PinRising\n")
-			pirCh <- "ArriveRising"
-
+			pirCh <- "FarRising"
 		} else {
-
-			fmt.Printf("ISR PIR Arriving ArriveFalling PinFalling\n")
-			pirCh <- "ArriveFalling"
-
+			pirCh <- "FarFalling"
 		}
 
 	})
 
 	// Depart Sensor
-	pirDepart.Configure(machine.PinConfig{Mode: machine.PinInput})
-	pirDepart.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
+	pirNear.Configure(machine.PinConfig{Mode: machine.PinInput})
+	pirNear.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
 
 		if p.Get() {
-
-			fmt.Printf("ISR PIR Departing DepartRising PinRising\n")
-			pirCh <- "DepartRising"
-
-		} else {
-
-			fmt.Printf("ISR PIR Departing DepartFalling PinFalling\n")
-			pirCh <- "DepartFalling"
-
+			pirCh <- "NearRising"
+			} else {
+			pirCh <- "NearFalling"
 		}
 
 	})
@@ -120,6 +109,9 @@ func main() {
 	// white := color.RGBA{255, 255, 255, 255}
 	// blue := color.RGBA{0, 0, 255, 255}
 	green := color.RGBA{0, 255, 0, 255}
+	// Off and clear initially
+	display.EnableBacklight(false)
+	cls(&display)
 
 	//
 	// Setup input buttons (the ones on the display)
@@ -138,22 +130,10 @@ func main() {
 	key2.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
 	key3.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
 
-	key0.SetInterrupt(machine.PinFalling, func(p machine.Pin) {
-		keyPressed = p
-		fmt.Printf("Key0\n")
-	})
-	key1.SetInterrupt(machine.PinFalling, func(p machine.Pin) {
-		keyPressed = p
-		fmt.Printf("Key1\n")
-	})
-	key2.SetInterrupt(machine.PinFalling, func(p machine.Pin) {
-		keyPressed = p
-		fmt.Printf("Key2\n")
-	})
-	key3.SetInterrupt(machine.PinFalling, func(p machine.Pin) {
-		keyPressed = p
-		fmt.Printf("Key3\n")
-	})
+	key0.SetInterrupt(machine.PinFalling, func(p machine.Pin) { keyPressed = p })
+	key1.SetInterrupt(machine.PinFalling, func(p machine.Pin) { keyPressed = p })
+	key2.SetInterrupt(machine.PinFalling, func(p machine.Pin) { keyPressed = p })
+	key3.SetInterrupt(machine.PinFalling, func(p machine.Pin) { keyPressed = p })
 
 	//
 	//			Main Loop
@@ -188,16 +168,21 @@ func main() {
 			lastStatus = currentStatus
 
 			cls(&display)
-			msg := fmt.Sprintf("Arrived:  %v\nDeparted: %v\nErr:      %v\nFalse:    %v",
+			display.EnableBacklight(true)
+			msg := fmt.Sprintf("\nArrived:  %v\nDeparted: %v\nErr:      %v\nFalse:    %v\n",
 				mboxMarty.Ctx.ArrivedCount,
 				mboxMarty.Ctx.DepartedCount,
 				mboxMarty.Ctx.ErrorCount,
 				mboxMarty.Ctx.FalseAlarmCount)
 
 			tinyfont.WriteLine(&display, &freemono.Regular18pt7b, 10, 30, msg, green)
-			fmt.Printf("%v\n\n", msg)
+			fmt.Printf("\n%v\n", msg)
+
+			time.Sleep(time.Second * 3)
+			display.EnableBacklight(false)
+			cls(&display)
 		}
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 500)
 		runLight(led, 1)
 	}
 
@@ -230,24 +215,20 @@ func eventConsumer(ch chan string, m *marty.Marty) {
 	for {
 		// Wait for a change in position
 		event := <-ch
-		// fmt.Printf("event: %v\n", event)
+		// log.Printf("eventConsumer: %v\n", event)
 
 		// DEVTODO consider making the events of type fmt.EventID so I can remove the if statement
-		if event == "ArriveRising" {
-			fmt.Printf("SEND: %v\n", marty.ArriveRising)
-			m.SendEvent(marty.ArriveRising)
+		if event == "FarRising" {
+			m.SendEvent(marty.FarRising)
 		}
-		if event == "ArriveFalling" {
-			fmt.Printf("SEND: %v\n", marty.ArriveFalling)
-			m.SendEvent(marty.ArriveFalling)
+		if event == "FarFalling" {
+			m.SendEvent(marty.FarFalling)
 		}
-		if event == "DepartRising" {
-			fmt.Printf("SEND: %v\n", marty.DepartRising)
-			m.SendEvent(marty.DepartRising)
+		if event == "NearRising" {
+			m.SendEvent(marty.NearRising)
 		}
-		if event == "DepartFalling" {
-			m.SendEvent(marty.DepartFalling)
-			fmt.Printf("SEND: %v\n", marty.DepartFalling)
+		if event == "NearFalling" {
+			m.SendEvent(marty.NearFalling)
 		}
 	}
 }

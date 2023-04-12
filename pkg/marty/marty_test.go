@@ -10,15 +10,17 @@ import (
 
 func TestMartyStateMachine(t *testing.T) {
 
-	// Create a new instance of the light switch state machine.
-	m := New()
+	var m *Marty
+	
 
 	//
 	// A car arriving
 	//
+	t.Logf("----------------------------------\n")
+	m = New()
 	m.ResetContext()
-	m.SendEvent(ArriveRising)
-	m.SendEvent(DepartRising)
+	m.SendEvent(FarRising)
+	m.SendEvent(NearRising)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 1 &&
@@ -35,9 +37,11 @@ func TestMartyStateMachine(t *testing.T) {
 	//
 	// A car departing
 	//
+	t.Logf("----------------------------------\n")
+	m = New()
 	m.ResetContext()
-	m.SendEvent(DepartRising)
-	m.SendEvent(ArriveRising)
+	m.SendEvent(NearRising)
+	m.SendEvent(FarRising)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -55,9 +59,11 @@ func TestMartyStateMachine(t *testing.T) {
 	// FalseAlarm from the Arriving direction
 	// A car approaching but stops short, turns around, backups up or something
 	//
+	t.Logf("----------------------------------\n")
+	m = New()
 	m.ResetContext()
-	m.SendEvent(ArriveRising)
-	m.SendEvent(ArriveFalling)
+	m.SendEvent(FarRising)
+	m.SendEvent(FarFalling)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -74,9 +80,11 @@ func TestMartyStateMachine(t *testing.T) {
 	//
 	// FalseAlarm from the Departing direction
 	//
+	t.Logf("----------------------------------\n")
+	m = New()
 	m.ResetContext()
-	m.SendEvent(DepartRising)
-	m.SendEvent(DepartFalling)
+	m.SendEvent(NearRising)
+	m.SendEvent(NearFalling)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -94,9 +102,11 @@ func TestMartyStateMachine(t *testing.T) {
 	// Error from the Departing direction
 	// Error - should never get two Rising events in a row from the same direction
 	//
+	t.Logf("----------------------------------\n")
+	m = New()
 	m.ResetContext()
-	m.SendEvent(DepartRising)
-	m.SendEvent(DepartRising)
+	m.SendEvent(NearRising)
+	m.SendEvent(NearRising)
 
 	if m.Ctx.DefaultCount == 0 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -114,9 +124,11 @@ func TestMartyStateMachine(t *testing.T) {
 	// Error from the Arriving direction
 	// Error - should never get two Rising events in a row from the same direction
 	//
+	t.Logf("----------------------------------\n")
+	m = New()
 	m.ResetContext()
-	m.SendEvent(ArriveRising)
-	m.SendEvent(ArriveRising)
+	m.SendEvent(FarRising)
+	m.SendEvent(FarRising)
 
 	if m.Ctx.DefaultCount == 0 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -133,11 +145,13 @@ func TestMartyStateMachine(t *testing.T) {
 	//
 	// Default goes to Default if LD or RD
 	//
+	t.Logf("----------------------------------\n")
+	m = New()
 	m.ResetContext()
-	m.SendEvent(DepartRising)
-	m.SendEvent(ArriveRising)
-	m.SendEvent(ArriveFalling)
-	m.SendEvent(DepartFalling)
+	m.SendEvent(NearRising)
+	m.SendEvent(FarRising)
+	m.SendEvent(FarFalling)
+	m.SendEvent(NearFalling)
 
 	if m.Ctx.DefaultCount == 3 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -152,44 +166,50 @@ func TestMartyStateMachine(t *testing.T) {
 	}
 
 	//
-	// Combination of events
+	// I have see this but I am not sure how it happens.  I think the PIRs are timing out at different rates
 	//
+	t.Logf("----------------------------------\n")
+	m = New()
 	m.ResetContext()
+	m.SendEvent(NearRising)
+	m.SendEvent(FarFalling)
 
-	// A car arriving
-	m.SendEvent(ArriveRising)
-	m.SendEvent(DepartRising)
 
-	// A car departing
-	m.SendEvent(DepartRising)
-	m.SendEvent(ArriveRising)
-
-	// FalseAlarm from the Arriving direction
-	m.SendEvent(ArriveRising)
-	m.SendEvent(ArriveFalling)
-
-	// FalseAlarm from the Departing direction
-	m.SendEvent(DepartRising)
-	m.SendEvent(DepartFalling)
-
-	// Error from the Departing direction
-	m.SendEvent(DepartRising)
-	m.SendEvent(DepartRising)
-
-	// Error from the Arriving direction
-	m.SendEvent(ArriveRising)
-	m.SendEvent(ArriveRising)
-
-	if m.Ctx.DefaultCount == 4 &&
-		m.Ctx.ArrivedCount == 1 &&
-		m.Ctx.ArrivingCount == 3 &&
-		m.Ctx.DepartedCount == 1 &&
-		m.Ctx.DepartingCount == 3 &&
-		m.Ctx.ErrorCount == 2 &&
-		m.Ctx.FalseAlarmCount == 2 {
+	if m.Ctx.DefaultCount == 0 &&
+		m.Ctx.ArrivedCount == 0 &&
+		m.Ctx.ArrivingCount == 0 &&
+		m.Ctx.DepartedCount == 0 &&
+		m.Ctx.DepartingCount == 2 &&
+		m.Ctx.ErrorCount == 0 &&
+		m.Ctx.FalseAlarmCount == 0 {
 		// all good
 	} else {
-		t.Errorf("A combination of events\nexpected: {DefaultCount:4 ArrivedCount:1 ArrivingCount:3 DepartedCount:1 DepartingCount:3 ErrorCount:2 FalseAlarmCount:2}\ngot:      %+v", m.Ctx)
+		t.Errorf("Falling out of order\nexpected: {DefaultCount:0 ArrivedCount:0 ArrivingCount:0 DepartedCount:0 DepartingCount:2 ErrorCount:0 FalseAlarmCount:0}\ngot:      %+v", m.Ctx)
 	}
+
+
+	//
+	// I have see this but I am not sure how it happens.  I think the PIRs are timing out at different rates
+	//
+	t.Logf("----------------------------------\n")
+	m = New()
+	m.ResetContext()
+	m.SendEvent(FarRising)
+	m.SendEvent(NearFalling)
+
+
+	if m.Ctx.DefaultCount == 0 &&
+		m.Ctx.ArrivedCount == 0 &&
+		m.Ctx.ArrivingCount == 2 &&
+		m.Ctx.DepartedCount == 0 &&
+		m.Ctx.DepartingCount == 0 &&
+		m.Ctx.ErrorCount == 0 &&
+		m.Ctx.FalseAlarmCount == 0 {
+		// all good
+	} else {
+		t.Errorf("Falling out of order\nexpected: {DefaultCount:0 ArrivedCount:0 ArrivingCount:2 DepartedCount:0 DepartingCount:0 ErrorCount:0 FalseAlarmCount:0}\ngot:      %+v", m.Ctx)
+	}
+
+
 
 }
