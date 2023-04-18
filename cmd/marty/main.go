@@ -40,6 +40,9 @@ func main() {
 	// Create a new instance of the state machine.
 	mboxMarty := marty.New()
 
+	//
+	// Create channel for PIR events
+	//
 	var pirCh chan string
 	pirCh = make(chan string)
 	go eventConsumer(pirCh, mboxMarty)
@@ -70,70 +73,9 @@ func main() {
 	})
 
 	//
-	// setup the display
+	// Setup Display
 	//
-	machine.SPI1.Configure(machine.SPIConfig{
-		Frequency: 8000000,
-		LSBFirst:  false,
-		Mode:      0,
-		DataBits:  0,
-		SCK:       machine.GP10,
-		SDO:       machine.GP11,
-		SDI:       machine.GP28, // I don't think this is actually used for LCD, just assign to any open pin
-	})
-
-	display := st7789.New(machine.SPI1,
-		machine.GP12, // TFT_RESET
-		machine.GP8,  // TFT_DC
-		machine.GP9,  // TFT_CS
-		machine.GP13) // TFT_LITE
-
-	display.Configure(st7789.Config{
-		// With the display in portrait and the usb socket on the left and in the back
-		// the actual width and height are switched width=320 and height=240
-		Width:        240,
-		Height:       320,
-		Rotation:     st7789.ROTATION_90,
-		RowOffset:    0,
-		ColumnOffset: 0,
-		FrameRate:    st7789.FRAMERATE_111,
-		VSyncLines:   st7789.MAX_VSYNC_SCANLINES,
-	})
-
-	width, height := display.Size()
-	fmt.Printf("width: %v, height: %v\n", width, height)
-
-	// red := color.RGBA{126, 0, 0, 255} // dim
-	// red := color.RGBA{255, 0, 0, 255}
-	// black := color.RGBA{0, 0, 0, 255}
-	// white := color.RGBA{255, 255, 255, 255}
-	// blue := color.RGBA{0, 0, 255, 255}
-	green := color.RGBA{0, 255, 0, 255}
-	// Off and clear initially
-	display.EnableBacklight(false)
-	cls(&display)
-
-	//
-	// Setup input buttons (the ones on the display)
-	//
-
-	// If any key is pressed record the corresponding pin
-	var keyPressed machine.Pin
-
-	key0 := machine.GP15
-	key1 := machine.GP17
-	key2 := machine.GP2
-	key3 := machine.GP3
-
-	key0.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
-	key1.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
-	key2.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
-	key3.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
-
-	key0.SetInterrupt(machine.PinFalling, func(p machine.Pin) { keyPressed = p })
-	key1.SetInterrupt(machine.PinFalling, func(p machine.Pin) { keyPressed = p })
-	key2.SetInterrupt(machine.PinFalling, func(p machine.Pin) { keyPressed = p })
-	key3.SetInterrupt(machine.PinFalling, func(p machine.Pin) { keyPressed = p })
+	display, key0, key1, key2, key3, displayKeyPressed := setupDisplay()
 
 	//
 	//			Main Loop
@@ -141,23 +83,30 @@ func main() {
 	var currentStatus, lastStatus int
 	for {
 
-		if keyPressed == key0 {
-			keyPressed = 0
+		if *displayKeyPressed == key0 {
+			*displayKeyPressed = 0
 			log.Printf("key0\n")
 		}
-		if keyPressed == key1 {
-			keyPressed = 0
+		if *displayKeyPressed == key1 {
+			*displayKeyPressed = 0
 			log.Printf("key1\n")
 			mboxMarty.ResetContext()
 		}
-		if keyPressed == key2 {
-			keyPressed = 0
+		if *displayKeyPressed == key2 {
+			*displayKeyPressed = 0
 			log.Printf("key2\n")
 		}
-		if keyPressed == key3 {
-			keyPressed = 0
+		if *displayKeyPressed == key3 {
+			*displayKeyPressed = 0
 			log.Printf("key3\n")
 		}
+
+		// red := color.RGBA{126, 0, 0, 255} // dim
+		// red := color.RGBA{255, 0, 0, 255}
+		// black := color.RGBA{0, 0, 0, 255}
+		// white := color.RGBA{255, 255, 255, 255}
+		// blue := color.RGBA{0, 0, 255, 255}
+		green := color.RGBA{0, 255, 0, 255}
 
 		//
 		// Display
@@ -231,4 +180,67 @@ func eventConsumer(ch chan string, m *marty.Marty) {
 			m.SendEvent(marty.NearFalling)
 		}
 	}
+}
+
+func setupDisplay() (display st7789.Device, key0, key1, key2, key3  machine.Pin, displayKeyPressed *machine.Pin) {
+
+	//
+	// setup the display
+	//
+	machine.SPI1.Configure(machine.SPIConfig{
+		Frequency: 8000000,
+		LSBFirst:  false,
+		Mode:      0,
+		DataBits:  0,
+		SCK:       machine.GP10,
+		SDO:       machine.GP11,
+		SDI:       machine.GP28, // I don't think this is actually used for LCD, just assign to any open pin
+	})
+
+	display = st7789.New(machine.SPI1,
+		machine.GP12, // TFT_RESET
+		machine.GP8,  // TFT_DC
+		machine.GP9,  // TFT_CS
+		machine.GP13) // TFT_LITE
+
+	display.Configure(st7789.Config{
+		// With the display in portrait and the usb socket on the left and in the back
+		// the actual width and height are switched width=320 and height=240
+		Width:        240,
+		Height:       320,
+		Rotation:     st7789.ROTATION_90,
+		RowOffset:    0,
+		ColumnOffset: 0,
+		FrameRate:    st7789.FRAMERATE_111,
+		VSyncLines:   st7789.MAX_VSYNC_SCANLINES,
+	})
+
+	//
+	// Setup input buttons (the ones on the display)
+	//
+	key0 = machine.GP15
+	key1 = machine.GP17
+	key2 = machine.GP2
+	key3 = machine.GP3
+
+	key0.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
+	key1.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
+	key2.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
+	key3.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
+
+	key0.SetInterrupt(machine.PinFalling, func(p machine.Pin) { displayKeyPressed = &p })
+	key1.SetInterrupt(machine.PinFalling, func(p machine.Pin) { displayKeyPressed = &p })
+	key2.SetInterrupt(machine.PinFalling, func(p machine.Pin) { displayKeyPressed = &p })
+	key3.SetInterrupt(machine.PinFalling, func(p machine.Pin) { displayKeyPressed = &p })
+
+	width, height := display.Size()
+	fmt.Printf("width: %v, height: %v\n", width, height)
+
+	// Off and clear initially
+	display.EnableBacklight(false)
+	cls(&display)
+
+
+	return
+	
 }

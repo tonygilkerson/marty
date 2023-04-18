@@ -18,3 +18,7 @@ The PIR motion sensors will pull a pin high when movement is detected, therefor 
 | NF    | "Near Falling" - Near PIR `PinFalling` event   |
 
 >Note: Any unhandled event go to the `Error` state
+
+## Prototype 1
+
+![proto1](img/proto1.drawio.png)
