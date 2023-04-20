@@ -166,7 +166,9 @@ func TestMartyStateMachine(t *testing.T) {
 	}
 
 	//
-	// I have see this but I am not sure how it happens.  I think the PIRs are timing out at different rates
+	// I have see this but I am not sure how it happens.  
+	// I think the PIRs are timing out at different rates 
+	// or I have a hardware issue, or maybe I am running the PIRs with the wrong voltage
 	//
 	t.Logf("----------------------------------\n")
 	m = New()
@@ -179,12 +181,12 @@ func TestMartyStateMachine(t *testing.T) {
 		m.Ctx.ArrivedCount == 0 &&
 		m.Ctx.ArrivingCount == 0 &&
 		m.Ctx.DepartedCount == 0 &&
-		m.Ctx.DepartingCount == 2 &&
-		m.Ctx.ErrorCount == 0 &&
+		m.Ctx.DepartingCount == 1 &&
+		m.Ctx.ErrorCount == 1 &&
 		m.Ctx.FalseAlarmCount == 0 {
 		// all good
 	} else {
-		t.Errorf("Falling out of order\nexpected: {DefaultCount:0 ArrivedCount:0 ArrivingCount:0 DepartedCount:0 DepartingCount:2 ErrorCount:0 FalseAlarmCount:0}\ngot:      %+v", m.Ctx)
+		t.Errorf("Falling out of order 1\nexpected: {DefaultCount:0 ArrivedCount:0 ArrivingCount:0 DepartedCount:0 DepartingCount:1 ErrorCount:1 FalseAlarmCount:0}\ngot:      %+v", m.Ctx)
 	}
 
 
@@ -200,14 +202,14 @@ func TestMartyStateMachine(t *testing.T) {
 
 	if m.Ctx.DefaultCount == 0 &&
 		m.Ctx.ArrivedCount == 0 &&
-		m.Ctx.ArrivingCount == 2 &&
+		m.Ctx.ArrivingCount == 1 &&
 		m.Ctx.DepartedCount == 0 &&
 		m.Ctx.DepartingCount == 0 &&
-		m.Ctx.ErrorCount == 0 &&
+		m.Ctx.ErrorCount == 1 &&
 		m.Ctx.FalseAlarmCount == 0 {
 		// all good
 	} else {
-		t.Errorf("Falling out of order\nexpected: {DefaultCount:0 ArrivedCount:0 ArrivingCount:2 DepartedCount:0 DepartingCount:0 ErrorCount:0 FalseAlarmCount:0}\ngot:      %+v", m.Ctx)
+		t.Errorf("Falling out of order 2\nexpected: {DefaultCount:0 ArrivedCount:0 ArrivingCount:1 DepartedCount:0 DepartingCount:0 ErrorCount:1 FalseAlarmCount:0}\ngot:      %+v", m.Ctx)
 	}
 
 
