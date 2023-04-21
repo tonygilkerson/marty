@@ -7,13 +7,15 @@ import (
 	"machine"
 	"time"
 
+	"tinygo.org/x/drivers/lora"
+	"tinygo.org/x/drivers/sx126x"
 	"tinygo.org/x/drivers/st7789"
 	"github.com/tonygilkerson/marty/pkg/marty"
 )
 
 const (
-	pirFar  = machine.PB10
-	pirNear = machine.PA9
+	LORA_DEFAULT_RXTIMEOUT_MS = 1000
+	LORA_DEFAULT_TXTIMEOUT_MS = 5000
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -40,10 +42,20 @@ func main() {
 	setupPIR(pirCh)
 
 	//
+	// Setup Lora
+	//
+	var loraRadio *sx126x.Device
+	var loraSPI = machine.SPI3
+	setupLora(loraRadio,loraSPI)
+	
+
+	//
 	//			Main Loop
 	//
 	var currentStatus, lastStatus int
 	for {
+		// Current status changes if any count changes
+		currentStatus = mboxMarty.Ctx.ArrivedCount + mboxMarty.Ctx.DepartedCount + mboxMarty.Ctx.ErrorCount + mboxMarty.Ctx.FalseAlarmCount
 
 		if currentStatus != lastStatus {
 			lastStatus = currentStatus
@@ -53,12 +65,11 @@ func main() {
 				mboxMarty.Ctx.DepartedCount,
 				mboxMarty.Ctx.ErrorCount,
 				mboxMarty.Ctx.FalseAlarmCount)
-			fmt.Printf("\n%v\n", msg)
-
-			time.Sleep(time.Second * 3)
+			log.Printf("\n%v\n", msg)
+			loraTxRx(loraRadio, []byte(msg))
 
 		}
-		time.Sleep(time.Millisecond * 500)
+		time.Sleep(time.Second * 50)
 		runLight(led, 1)
 	}
 
@@ -69,6 +80,73 @@ func main() {
 //	functions
 //
 // /////////////////////////////////////////////////////////////////////////////
+
+func setupLora(loraRadio *sx126x.Device, spi  machine.SPI) {
+
+	
+	// Create the driver
+	loraRadio = sx126x.New(spi)
+	loraRadio.SetDeviceType(sx126x.DEVICE_TYPE_SX1262)
+
+	// Create radio controller for target
+	rc := sx126x.NewRadioControl()
+	loraRadio.SetRadioController(rc)
+
+	// Detect the device
+	state := loraRadio.DetectDevice()
+	if !state {
+		panic("sx126x not detected.")
+	}
+
+	loraConf := lora.Config{
+		Freq:           lora.MHz_916_8,
+		Bw:             lora.Bandwidth_125_0,
+		Sf:             lora.SpreadingFactor9,
+		Cr:             lora.CodingRate4_7,
+		HeaderType:     lora.HeaderExplicit,
+		Preamble:       12,
+		Ldr:            lora.LowDataRateOptimizeOff,
+		Iq:             lora.IQStandard,
+		Crc:            lora.CRCOn,
+		SyncWord:       lora.SyncPrivate,
+		LoraTxPowerDBm: 20,
+	}
+
+	loraRadio.LoraConfig(loraConf)
+
+}
+
+// loraTxRx will transmit the current counts then listen for a received message
+func loraTxRx(loraRadio *sx126x.Device,msg []byte) {
+
+	//
+	//	Tx
+	//
+	log.Printf("Send TX size=%v -> %v", len(msg), string(msg))
+	err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
+	if err != nil {
+		log.Printf("TX Error: %v\n", err)
+	}
+	
+	//
+	//	Rx
+	//
+
+	// DEVTODO add rx when I have a need for it
+
+	// start := time.Now()
+	// log.Println("Receiving for 5 seconds")
+	// for time.Since(start) < 5*time.Second {
+	// 	buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+	// 	if err != nil {
+	// 		log.Printf("RX Error: %v\n", err)
+	// 	} else if buf != nil {
+	// 		log.Printf("Packet Received: len=%v %v\n", len(buf), string(buf))
+	// 	}
+	// }
+
+}
+
 func runLight(led machine.Pin, count int) {
 
 	// blink run light for a bit seconds so I can tell it is starting
@@ -111,6 +189,12 @@ func eventConsumer(ch chan string, m *marty.Marty) {
 
 // Setup PIR sensor
 func setupPIR(pirCh chan string) {
+
+
+	const (
+		pirFar  = machine.PB10
+		pirNear = machine.PA9
+	)
 
 	// Arrive Sensor
 	// pirFar.Configure(machine.PinConfig{Mode: machine.PinInput})
