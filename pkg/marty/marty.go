@@ -3,6 +3,8 @@ package marty
 import (
 	"fmt"
 	"log"
+	"strings"
+	"strconv"
 
 	"github.com/tonygilkerson/marty/pkg/fsm"
 )
@@ -34,14 +36,14 @@ type Context struct {
 	FalseAlarmCount int
 }
 
-type Marty struct {
-	StateMachine fsm.StateMachine
-	Ctx          Context
-}
-
 func (c *Context) String() string {
 	cCopy := *c
 	return fmt.Sprintf("Context: %+v\n", cCopy)
+}
+
+type Marty struct {
+	StateMachine fsm.StateMachine
+	Ctx          Context
 }
 
 // sendEvent sends an event to the state machine.
@@ -68,6 +70,44 @@ func (m *Marty) ResetContext() {
 		ErrorCount:      0,
 		FalseAlarmCount: 0,
 	}
+}
+
+// MarshallMetrics will format the Context into a message that can be sent
+func (m *Marty) MarshallMetrics() string {
+	msg := fmt.Sprintf("metrics|%d|%d|%d|%d|%d|%d|%d",
+		m.Ctx.ArrivedCount,
+		m.Ctx.ArrivingCount,
+		m.Ctx.DefaultCount,
+		m.Ctx.DepartedCount,
+		m.Ctx.DepartingCount,
+		m.Ctx.ErrorCount,
+		m.Ctx.FalseAlarmCount,
+	)
+
+	return msg
+}
+
+// UnmarshallMetrics will unmarshall a message that was produced by MarshallMetrics
+func (m *Marty) UnmarshallMetrics(msg string) Context {
+
+	var ctx Context
+
+	msgParts := strings.Split(msg, "|")
+
+	if msgParts[0] != "metrics" {
+		log.Printf("expected metrics message got: %v\n", msg)
+		return ctx
+	}
+
+	ctx.ArrivedCount, _ = strconv.Atoi(msgParts[1])
+	ctx.ArrivingCount, _ = strconv.Atoi(msgParts[2])
+	ctx.DefaultCount, _ = strconv.Atoi(msgParts[3])
+	ctx.DepartedCount, _ = strconv.Atoi(msgParts[4])
+	ctx.DepartingCount, _ = strconv.Atoi(msgParts[5])
+	ctx.ErrorCount, _ = strconv.Atoi(msgParts[6])
+	ctx.FalseAlarmCount, _ = strconv.Atoi(msgParts[7])
+
+	return ctx
 }
 
 // DefaultAction
@@ -130,7 +170,6 @@ func (a *DepartingAction) Execute(eventCtx fsm.EventContext) fsm.EventID {
 }
 
 // DepartedAction
-
 
 // ErrorAction
 type ErrorAction struct{}

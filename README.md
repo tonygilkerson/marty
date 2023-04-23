@@ -15,3 +15,7 @@ mkdocs serve
 # Edit content and review changes here:
 open http://127.0.0.1:8000/
 ```
+
+DEVTODO - use [mapfs](https://pkg.go.dev/testing/fstest) to embed config files into the running process
+DEVTODO - need to refine power supply, need 5v and 3v3, ideally I would do it all from a USB-C to battery pack.
+DEVTODO - need short antenna lead

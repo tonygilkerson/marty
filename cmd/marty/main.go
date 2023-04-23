@@ -2,15 +2,13 @@ package main
 
 import (
 	"fmt"
-	"image/color"
 	"log"
 	"machine"
 	"time"
 
+	"github.com/tonygilkerson/marty/pkg/marty"
 	"tinygo.org/x/drivers/lora"
 	"tinygo.org/x/drivers/sx126x"
-	"tinygo.org/x/drivers/st7789"
-	"github.com/tonygilkerson/marty/pkg/marty"
 )
 
 const (
@@ -31,59 +29,78 @@ func main() {
 	led := machine.LED
 	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	runLight(led, 10)
-	
+
 	//
-	// Setup PIR Sensor
+	// 	Setup PIR Sensor and start the event consumer
 	//
-	mboxMarty := marty.New()
+	mbx := marty.New()
 	var pirCh chan string
 	pirCh = make(chan string)
-	go eventConsumer(pirCh, mboxMarty)
+	go eventConsumer(pirCh, mbx)
 	setupPIR(pirCh)
 
 	//
-	// Setup Lora
+	// 	Setup Lora
 	//
-	var loraRadio *sx126x.Device
-	var loraSPI = machine.SPI3
-	setupLora(loraRadio,loraSPI)
-	
+	loraRadio := setupLora(machine.SPI3)
 
 	//
-	//			Main Loop
+	//	Publish Metrics
 	//
+	go publishMetrics(mbx, loraRadio, led)
+
+	// Blink forever
+	for {
+		runLight(led, 1)
+		time.Sleep(time.Second * 60)
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//															functions
+//////////////////////////////////////////////////////////////////////////////
+
+// publishMetrics will publish the mbox status via Lora on a schedule
+func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin) {
+
 	var currentStatus, lastStatus int
 	for {
 		// Current status changes if any count changes
-		currentStatus = mboxMarty.Ctx.ArrivedCount + mboxMarty.Ctx.DepartedCount + mboxMarty.Ctx.ErrorCount + mboxMarty.Ctx.FalseAlarmCount
+		currentStatus = mbx.Ctx.ArrivedCount + mbx.Ctx.DepartedCount + mbx.Ctx.ErrorCount + mbx.Ctx.FalseAlarmCount
 
 		if currentStatus != lastStatus {
 			lastStatus = currentStatus
 
-			msg := fmt.Sprintf("\nArrived:  %v\nDeparted: %v\nErr:      %v\nFalse:    %v\n",
-				mboxMarty.Ctx.ArrivedCount,
-				mboxMarty.Ctx.DepartedCount,
-				mboxMarty.Ctx.ErrorCount,
-				mboxMarty.Ctx.FalseAlarmCount)
-			log.Printf("\n%v\n", msg)
-			loraTxRx(loraRadio, []byte(msg))
+			msg := fmt.Sprintf("Arrived: %v\tDeparted: %v\tErr: %v\tFalse: %v", mbx.Ctx.ArrivedCount, mbx.Ctx.DepartedCount, mbx.Ctx.ErrorCount, mbx.Ctx.FalseAlarmCount)
+			log.Printf("Arrived: %v\tDeparted: %v\tErr: %v\tFalse: %v", mbx.Ctx.ArrivedCount, mbx.Ctx.DepartedCount, mbx.Ctx.ErrorCount, mbx.Ctx.FalseAlarmCount)
+		
+			msg = mbx.MarshallMetrics()
+			loraTx(loraRadio, []byte(msg))
 
 		}
-		time.Sleep(time.Second * 50)
-		runLight(led, 1)
+		// DEVTODO make this delay longer like 60 second, using 5 for testing
+		time.Sleep(time.Second * 5)
+		runLight(led, 3)
 	}
 
 }
 
-// /////////////////////////////////////////////////////////////////////////////
-//
-//	functions
-//
-// /////////////////////////////////////////////////////////////////////////////
+// loraTx will transmit the current counts then listen for a received message
+func loraTx(loraRadio *sx126x.Device, msg []byte) {
 
-func setupLora(loraRadio *sx126x.Device, spi  machine.SPI) {
+	log.Printf("Send TX size=%v -> %v", len(msg), string(msg))
+	err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
+	if err != nil {
+		log.Printf("TX Error: %v\n", err)
+	}
 
-	
+}
+
+// setupLora will setup the lora radio device
+func setupLora(spi machine.SPI) *sx126x.Device {
+
+	var loraRadio *sx126x.Device
+
 	// Create the driver
 	loraRadio = sx126x.New(spi)
 	loraRadio.SetDeviceType(sx126x.DEVICE_TYPE_SX1262)
@@ -114,37 +131,7 @@ func setupLora(loraRadio *sx126x.Device, spi  machine.SPI) {
 
 	loraRadio.LoraConfig(loraConf)
 
-}
-
-// loraTxRx will transmit the current counts then listen for a received message
-func loraTxRx(loraRadio *sx126x.Device,msg []byte) {
-
-	//
-	//	Tx
-	//
-	log.Printf("Send TX size=%v -> %v", len(msg), string(msg))
-	err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
-	if err != nil {
-		log.Printf("TX Error: %v\n", err)
-	}
-	
-	//
-	//	Rx
-	//
-
-	// DEVTODO add rx when I have a need for it
-
-	// start := time.Now()
-	// log.Println("Receiving for 5 seconds")
-	// for time.Since(start) < 5*time.Second {
-	// 	buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
-	// 	if err != nil {
-	// 		log.Printf("RX Error: %v\n", err)
-	// 	} else if buf != nil {
-	// 		log.Printf("Packet Received: len=%v %v\n", len(buf), string(buf))
-	// 	}
-	// }
-
+	return loraRadio
 }
 
 func runLight(led machine.Pin, count int) {
@@ -157,11 +144,6 @@ func runLight(led machine.Pin, count int) {
 		time.Sleep(time.Millisecond * 50)
 	}
 	led.Low()
-}
-
-func cls(d *st7789.Device) {
-	black := color.RGBA{0, 0, 0, 255}
-	d.FillScreen(black)
 }
 
 // eventConsumer will receive event from the ISRs and send them to the state machine
@@ -190,10 +172,9 @@ func eventConsumer(ch chan string, m *marty.Marty) {
 // Setup PIR sensor
 func setupPIR(pirCh chan string) {
 
-
 	const (
-		pirFar  = machine.PB10
-		pirNear = machine.PA9
+		pirNear  = machine.PB10
+		pirFar = machine.PA9
 	)
 
 	// Arrive Sensor
@@ -215,11 +196,10 @@ func setupPIR(pirCh chan string) {
 
 		if p.Get() {
 			pirCh <- "NearRising"
-			} else {
+		} else {
 			pirCh <- "NearFalling"
 		}
 
 	})
-
 
 }
