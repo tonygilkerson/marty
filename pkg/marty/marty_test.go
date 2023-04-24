@@ -224,7 +224,7 @@ func TestMartyStateMachine(t *testing.T) {
 	m.Ctx.FalseAlarmCount = 4
 
 	msg := m.MarshallMetrics()
-	ctx := m.UnmarshallMetrics(msg)
+	ctx := UnmarshallMetrics(msg)
 
 	if ctx.ArrivedCount == 1 &&
 		ctx.DepartedCount == 2 &&

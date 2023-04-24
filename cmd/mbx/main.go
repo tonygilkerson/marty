@@ -49,10 +49,16 @@ func main() {
 	//
 	go publishMetrics(mbx, loraRadio, led)
 
-	// Blink forever
+	// Send metrics every minute even if there is no change
+	// this will act as a heart beat
 	for {
-		runLight(led, 1)
+
 		time.Sleep(time.Second * 60)
+		runLight(led, 1)
+
+		// Transmit metrics
+		loraTx(loraRadio, []byte(mbx.MarshallMetrics()))
+
 	}
 }
 
@@ -70,12 +76,10 @@ func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin)
 
 		if currentStatus != lastStatus {
 			lastStatus = currentStatus
-
-			msg := fmt.Sprintf("Arrived: %v\tDeparted: %v\tErr: %v\tFalse: %v", mbx.Ctx.ArrivedCount, mbx.Ctx.DepartedCount, mbx.Ctx.ErrorCount, mbx.Ctx.FalseAlarmCount)
+						
+			// Transmit metrics
+			loraTx(loraRadio, []byte(mbx.MarshallMetrics()))
 			log.Printf("Arrived: %v\tDeparted: %v\tErr: %v\tFalse: %v", mbx.Ctx.ArrivedCount, mbx.Ctx.DepartedCount, mbx.Ctx.ErrorCount, mbx.Ctx.FalseAlarmCount)
-		
-			msg = mbx.MarshallMetrics()
-			loraTx(loraRadio, []byte(msg))
 
 		}
 		// DEVTODO make this delay longer like 60 second, using 5 for testing

@@ -74,7 +74,7 @@ func (m *Marty) ResetContext() {
 
 // MarshallMetrics will format the Context into a message that can be sent
 func (m *Marty) MarshallMetrics() string {
-	msg := fmt.Sprintf("metrics|%d|%d|%d|%d",
+	msg := fmt.Sprintf("mbx|%d|%d|%d|%d",
 		m.Ctx.ArrivedCount,
 		m.Ctx.DepartedCount,
 		m.Ctx.ErrorCount,
@@ -85,13 +85,13 @@ func (m *Marty) MarshallMetrics() string {
 }
 
 // UnmarshallMetrics will unmarshall a message that was produced by MarshallMetrics
-func (m *Marty) UnmarshallMetrics(msg string) Context {
+func UnmarshallMetrics(msg string) Context {
 
 	var ctx Context
 
 	msgParts := strings.Split(msg, "|")
 
-	if msgParts[0] != "metrics" {
+	if msgParts[0] != "mbx" {
 		log.Printf("expected metrics message got: %v\n", msg)
 		return ctx
 	}
