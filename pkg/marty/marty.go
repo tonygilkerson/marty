@@ -84,6 +84,10 @@ func (m *Marty) MarshallMetrics() string {
 	return msg
 }
 
+func Foo() int {
+	return 42
+}
+
 // UnmarshallMetrics will unmarshall a message that was produced by MarshallMetrics
 func UnmarshallMetrics(msg string) Context {
 
