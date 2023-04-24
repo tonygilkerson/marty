@@ -74,12 +74,9 @@ func (m *Marty) ResetContext() {
 
 // MarshallMetrics will format the Context into a message that can be sent
 func (m *Marty) MarshallMetrics() string {
-	msg := fmt.Sprintf("metrics|%d|%d|%d|%d|%d|%d|%d",
+	msg := fmt.Sprintf("metrics|%d|%d|%d|%d",
 		m.Ctx.ArrivedCount,
-		m.Ctx.ArrivingCount,
-		m.Ctx.DefaultCount,
 		m.Ctx.DepartedCount,
-		m.Ctx.DepartingCount,
 		m.Ctx.ErrorCount,
 		m.Ctx.FalseAlarmCount,
 	)
@@ -100,12 +97,9 @@ func (m *Marty) UnmarshallMetrics(msg string) Context {
 	}
 
 	ctx.ArrivedCount, _ = strconv.Atoi(msgParts[1])
-	ctx.ArrivingCount, _ = strconv.Atoi(msgParts[2])
-	ctx.DefaultCount, _ = strconv.Atoi(msgParts[3])
-	ctx.DepartedCount, _ = strconv.Atoi(msgParts[4])
-	ctx.DepartingCount, _ = strconv.Atoi(msgParts[5])
-	ctx.ErrorCount, _ = strconv.Atoi(msgParts[6])
-	ctx.FalseAlarmCount, _ = strconv.Atoi(msgParts[7])
+	ctx.DepartedCount, _ = strconv.Atoi(msgParts[2])
+	ctx.ErrorCount, _ = strconv.Atoi(msgParts[3])
+	ctx.FalseAlarmCount, _ = strconv.Atoi(msgParts[4])
 
 	return ctx
 }
