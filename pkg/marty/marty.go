@@ -3,8 +3,6 @@ package marty
 import (
 	"fmt"
 	"log"
-	"strings"
-	"strconv"
 
 	"github.com/tonygilkerson/marty/pkg/fsm"
 )
@@ -72,41 +70,37 @@ func (m *Marty) ResetContext() {
 	}
 }
 
-// MarshallMetrics will format the Context into a message that can be sent
-func (m *Marty) MarshallMetrics() string {
-	msg := fmt.Sprintf("mbx|%d|%d|%d|%d",
-		m.Ctx.ArrivedCount,
-		m.Ctx.DepartedCount,
-		m.Ctx.ErrorCount,
-		m.Ctx.FalseAlarmCount,
-	)
+// // MarshallMetrics will format the Context into a message that can be sent
+// func (m *Marty) MarshallMetrics() string {
+// 	msg := fmt.Sprintf("mbx|%d|%d|%d|%d",
+// 		m.Ctx.ArrivedCount,
+// 		m.Ctx.DepartedCount,
+// 		m.Ctx.ErrorCount,
+// 		m.Ctx.FalseAlarmCount,
+// 	)
 
-	return msg
-}
+// 	return msg
+// }
 
-func Foo() int {
-	return 42
-}
+// // UnmarshallMetrics will unmarshall a message that was produced by MarshallMetrics
+// func UnmarshallMetrics(msg string) Context {
 
-// UnmarshallMetrics will unmarshall a message that was produced by MarshallMetrics
-func UnmarshallMetrics(msg string) Context {
+// 	var ctx Context
 
-	var ctx Context
+// 	msgParts := strings.Split(msg, "|")
 
-	msgParts := strings.Split(msg, "|")
+// 	if msgParts[0] != "mbx" {
+// 		log.Printf("expected metrics message got: %v\n", msg)
+// 		return ctx
+// 	}
 
-	if msgParts[0] != "mbx" {
-		log.Printf("expected metrics message got: %v\n", msg)
-		return ctx
-	}
+// 	ctx.ArrivedCount, _ = strconv.Atoi(msgParts[1])
+// 	ctx.DepartedCount, _ = strconv.Atoi(msgParts[2])
+// 	ctx.ErrorCount, _ = strconv.Atoi(msgParts[3])
+// 	ctx.FalseAlarmCount, _ = strconv.Atoi(msgParts[4])
 
-	ctx.ArrivedCount, _ = strconv.Atoi(msgParts[1])
-	ctx.DepartedCount, _ = strconv.Atoi(msgParts[2])
-	ctx.ErrorCount, _ = strconv.Atoi(msgParts[3])
-	ctx.FalseAlarmCount, _ = strconv.Atoi(msgParts[4])
-
-	return ctx
-}
+// 	return ctx
+// }
 
 // DefaultAction
 type DefaultAction struct{}

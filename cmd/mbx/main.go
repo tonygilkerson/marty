@@ -56,7 +56,7 @@ func main() {
 		runLight(led, 1)
 
 		// Transmit metrics
-		loraTx(loraRadio, []byte(mbx.MarshallMetrics()))
+		loraTx(loraRadio, []byte("Heartbeat"))
 
 	}
 }
@@ -68,22 +68,38 @@ func main() {
 // publishMetrics will publish the mbox status via Lora on a schedule
 func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin) {
 
-	var currentStatus, lastStatus int
+	var lastArrivedCount, lastDepartedCount, lastErrorCount, lastFalseAlarmCount int
+
 	for {
-		// Current status changes if any count changes
-		currentStatus = mbx.Ctx.ArrivedCount + mbx.Ctx.DepartedCount + mbx.Ctx.ErrorCount + mbx.Ctx.FalseAlarmCount
 
-		if currentStatus != lastStatus {
-			lastStatus = currentStatus
-						
-			// Transmit metrics
-			loraTx(loraRadio, []byte(mbx.MarshallMetrics()))
-			log.Printf("Arrived: %v\tDeparted: %v\tErr: %v\tFalse: %v", mbx.Ctx.ArrivedCount, mbx.Ctx.DepartedCount, mbx.Ctx.ErrorCount, mbx.Ctx.FalseAlarmCount)
-
+		if mbx.Ctx.ArrivedCount != lastArrivedCount {
+			lastArrivedCount = mbx.Ctx.ArrivedCount
+			log.Printf("Tx: Arrived")
+			loraTx(loraRadio, []byte(marty.Arrived))
 		}
-		// DEVTODO make this delay longer like 60 second, using 5 for testing
+
+		if mbx.Ctx.DepartedCount != lastDepartedCount {
+			lastDepartedCount = mbx.Ctx.DepartedCount
+			log.Printf("Tx: Departed")
+			loraTx(loraRadio, []byte(marty.Departed))
+		}
+
+		if mbx.Ctx.ErrorCount != lastErrorCount {
+			lastErrorCount = mbx.Ctx.ErrorCount
+			log.Printf("Tx: Error")
+			loraTx(loraRadio, []byte(marty.Error))
+		}
+
+		if mbx.Ctx.FalseAlarmCount != lastFalseAlarmCount {
+			lastFalseAlarmCount = mbx.Ctx.FalseAlarmCount
+			log.Printf("Tx: FalseAlarm")
+			loraTx(loraRadio, []byte(marty.FalseAlarm))
+		}
+
+		// I am not sure what the best delay should be here but if it is too large
+		// multiple Arrivals for example will only get counted as one
 		time.Sleep(time.Second * 5)
-		runLight(led, 3)
+		runLight(led, 2)
 	}
 
 }
@@ -176,8 +192,8 @@ func eventConsumer(ch chan string, m *marty.Marty) {
 func setupPIR(pirCh chan string) {
 
 	const (
-		pirNear  = machine.PB10
-		pirFar = machine.PA9
+		pirNear = machine.PB10
+		pirFar  = machine.PA9
 	)
 
 	// Arrive Sensor

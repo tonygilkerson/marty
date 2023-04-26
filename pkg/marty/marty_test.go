@@ -213,26 +213,4 @@ func TestMartyStateMachine(t *testing.T) {
 	}
 
 
-	//
-	// Make sure we can unmarshall a marshalled message
-	//
-	t.Logf("----------------------------------\n")
-	m = New()
-	m.Ctx.ArrivedCount = 1
-	m.Ctx.DepartedCount = 2
-	m.Ctx.ErrorCount = 3
-	m.Ctx.FalseAlarmCount = 4
-
-	msg := m.MarshallMetrics()
-	ctx := UnmarshallMetrics(msg)
-
-	if ctx.ArrivedCount == 1 &&
-		ctx.DepartedCount == 2 &&
-		ctx.ErrorCount == 3 &&
-		ctx.FalseAlarmCount == 4 {
-		t.Logf("Marshall/Unmarshall all good\n")
-	} else {
-		t.Errorf("Marshall/Unmarshall did not work\ngot: %+v", ctx)
-	}
-
 }
