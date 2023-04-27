@@ -31,17 +31,18 @@ func main() {
 	//
 	// setupUart
 	//
-	uart := setupUart()
+	uart := machine.UART2
+	machine.UART2.Configure(machine.UARTConfig{BaudRate: 9600, TX: machine.UART2_TX_PIN, RX: machine.UART2_RX_PIN})
 
 	//
 	// 	Setup Lora
 	//
-	loraRadio := setupLora(machine.SPI3)
+	// loraRadio := setupLora(machine.SPI3)
 
 	//
 	// Monitor LoraRx
 	//
-	go loraRx(uart, loraRadio)
+	// go loraRx(uart, loraRadio)
 
 	//
 	// Send heartbeat every minute 
@@ -80,16 +81,6 @@ func loraRx(uart *machine.UART,  loraRadio *sx126x.Device)  {
 		}
 	}
 
-}
-
-// setupUart will setup the UART to send messages to the cluster
-func setupUart() *machine.UART {
-	uart := machine.UART0
-	tx := machine.UART2_TX_PIN // PB6
-	rx := machine.UART2_RX_PIN // PB7
-	uart.Configure(machine.UARTConfig{TX: tx, RX: rx})
-
-	return uart
 }
 
 // setupLora will setup the lora radio device
