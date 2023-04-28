@@ -1,7 +1,9 @@
 package main
 
+// In this example, a Lora packet will be sent every 10s
+// module will be in RX mode between two transmissions
+
 import (
-	"log"
 	"machine"
 	"time"
 
@@ -14,87 +16,35 @@ const (
 	LORA_DEFAULT_TXTIMEOUT_MS = 5000
 )
 
-///////////////////////////////////////////////////////////////////////////////
-//		main
-///////////////////////////////////////////////////////////////////////////////
+var (
+	loraRadio *sx126x.Device
+	txmsg     = []byte("Hi from Gateway")
+)
 
 func main() {
-
-	// Log to the console with date, time and filename prepended
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	machine.LED.Configure(machine.PinConfig{Mode: machine.PinOutput})
 
 	// run light
-	led := machine.LED
-	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	runLight(led, 5)
+  runLight(3)
 
 	//
-	// setupUart
+	// setup Uart
 	//
+
 	uart := machine.UART2
 	machine.UART2.Configure(machine.UARTConfig{BaudRate: 9600, TX: machine.UART2_TX_PIN, RX: machine.UART2_RX_PIN})
 
-	//
-	// 	Setup Lora
-	//
-	// loraRadio := setupLora(machine.SPI3)
 
 	//
-	// Monitor LoraRx
+	// setup Lora Radio
 	//
-	// go loraRx(uart, loraRadio)
-
-	//
-	// Send heartbeat every minute 
-	//
-	for {
-
-		runLight(led, 2)
-		log.Printf("HEARTBEAT")
-		uart.Write([]byte("HEARTBEAT"))
-		time.Sleep(time.Second * 60)
-
-	}
-
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//															functions
-//////////////////////////////////////////////////////////////////////////////
-
-
-// loraRx will receive messages from in-the-field IOT devices
-func loraRx(uart *machine.UART,  loraRadio *sx126x.Device)  {
-
-	for {
-		buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
-
-		if err != nil {
-			log.Printf("RX Error: %v", err)
-		}
-
-		if buf != nil {
-			log.Printf("Packet received, send to UART: len: %v, msg: %v", len(buf), string(buf))
-			uart.Write(buf)
-		} else {
-			log.Printf("No packets to receive")
-		}
-	}
-
-}
-
-// setupLora will setup the lora radio device
-func setupLora(spi machine.SPI) *sx126x.Device {
-
-	var loraRadio *sx126x.Device
 
 	// Create the driver
 	loraRadio = sx126x.New(spi)
 	loraRadio.SetDeviceType(sx126x.DEVICE_TYPE_SX1262)
 
 	// Create radio controller for target
-	rc := sx126x.NewRadioControl()
-	loraRadio.SetRadioController(rc)
+	loraRadio.SetRadioController(newRadioControl())
 
 	// Detect the device
 	state := loraRadio.DetectDevice()
@@ -118,18 +68,49 @@ func setupLora(spi machine.SPI) *sx126x.Device {
 
 	loraRadio.LoraConfig(loraConf)
 
-	return loraRadio
+	var count uint
+	for {
+		start := time.Now()
+
+		// println("pinPB10 ", pinPB10.Get())
+		// println("pinPA9 ", pinPA9.Get())
+		// println("pinPA0 ", pinPA0.Get())
+
+		println("Receiving for 5 seconds")
+		for time.Since(start) < 5*time.Second {
+			buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+			if err != nil {
+				println("RX Error: ", err)
+			} else if buf != nil {
+				println("Packet Received: len=", len(buf), string(buf))
+				uart.Write(buf)
+				runLight(5)
+			}
+		}
+
+		println("Send TX size=", len(txmsg), " -> ", string(txmsg))
+		err := loraRadio.Tx(txmsg, LORA_DEFAULT_TXTIMEOUT_MS)
+		if err != nil {
+			println("TX Error:", err)
+		}
+		count++
+
+		runLight(3)
+	}
+
 }
 
+func runLight(count int) {
 
-func runLight(led machine.Pin, count int) {
+	// run light
+	led := machine.LED
 
 	// blink run light for a bit seconds so I can tell it is starting
 	for i := 0; i < count; i++ {
 		led.High()
-		time.Sleep(time.Millisecond * 50)
+		time.Sleep(time.Millisecond * 200)
 		led.Low()
-		time.Sleep(time.Millisecond * 50)
+		time.Sleep(time.Millisecond * 200)
 	}
 	led.Low()
 }

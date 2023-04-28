@@ -1,0 +1,129 @@
+package main
+
+import (
+	"log"
+	"machine"
+	"time"
+
+	"tinygo.org/x/drivers/lora"
+	"tinygo.org/x/drivers/sx126x"
+)
+
+const (
+	LORA_DEFAULT_RXTIMEOUT_MS = 1000
+	LORA_DEFAULT_TXTIMEOUT_MS = 5000
+)
+
+var loraRadio *sx126x.Device
+
+///////////////////////////////////////////////////////////////////////////////
+//		main
+///////////////////////////////////////////////////////////////////////////////
+
+func main() {
+
+	// Log to the console with date, time and filename prepended
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	// run light
+	led := machine.LED
+	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	runLight(led, 5)
+
+	//
+	// setupUart
+	//
+	uart := machine.UART2
+	machine.UART2.Configure(machine.UARTConfig{BaudRate: 9600, TX: machine.UART2_TX_PIN, RX: machine.UART2_RX_PIN})
+
+	//
+	// 	Setup Lora
+	//
+
+	// Create the driver
+	loraRadio = sx126x.New(machine.SPI3)
+	loraRadio.SetDeviceType(sx126x.DEVICE_TYPE_SX1262)
+
+	// Create radio controller for target
+	loraRadio.SetRadioController(sx126x.NewRadioControl())
+
+	// Detect the device
+	state := loraRadio.DetectDevice()
+	if !state {
+		panic("sx126x not detected.")
+	}
+
+	loraConf := lora.Config{
+		Freq:           lora.MHz_916_8,
+		Bw:             lora.Bandwidth_125_0,
+		Sf:             lora.SpreadingFactor9,
+		Cr:             lora.CodingRate4_7,
+		HeaderType:     lora.HeaderExplicit,
+		Preamble:       12,
+		Ldr:            lora.LowDataRateOptimizeOff,
+		Iq:             lora.IQStandard,
+		Crc:            lora.CRCOn,
+		SyncWord:       lora.SyncPrivate,
+		LoraTxPowerDBm: 20,
+	}
+
+	loraRadio.LoraConfig(loraConf)
+
+	//
+	// Monitor LoraRx
+	//
+	// go loraRx(uart, loraRadio)
+	loraRx(uart, loraRadio)
+	
+	//
+	// Send heartbeat every minute
+	//
+	// for {
+
+	// 	runLight(led, 2)
+	// 	log.Printf("GATEWAY-HEARTBEAT")
+	// 	uart.Write([]byte("GATEWAY-HEARTBEAT"))
+	// 	time.Sleep(time.Second * 60)
+
+	// }
+
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//															functions
+//////////////////////////////////////////////////////////////////////////////
+
+// loraRx will receive messages from in-the-field IOT devices
+func loraRx(uart *machine.UART, loraRadio *sx126x.Device) {
+
+	for {
+
+		start := time.Now()
+
+		log.Printf("Receiving for 10 seconds")
+		for time.Since(start) < 10*time.Second {
+			buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+			if err != nil {
+				log.Printf("RX Error: %v", err)
+			} else if buf != nil {
+				log.Printf("Packet received, send to UART: len: %v, msg: %v", len(buf), string(buf))
+			}
+		}
+
+	}
+
+}
+
+
+
+func runLight(led machine.Pin, count int) {
+
+	// blink run light for a bit seconds so I can tell it is starting
+	for i := 0; i < count; i++ {
+		led.High()
+		time.Sleep(time.Millisecond * 50)
+		led.Low()
+		time.Sleep(time.Millisecond * 50)
+	}
+	led.Low()
+}

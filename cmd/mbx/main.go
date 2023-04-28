@@ -52,11 +52,11 @@ func main() {
 	// this will act as a heart beat
 	for {
 
-		time.Sleep(time.Second * 60)
+		time.Sleep(time.Second * 5)
 		runLight(led, 1)
 
 		// Transmit metrics
-		loraTx(loraRadio, []byte("Heartbeat"))
+		loraTx(loraRadio, []byte("MBX-HEARTBEAT"))
 
 	}
 }
