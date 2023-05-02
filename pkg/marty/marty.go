@@ -44,19 +44,6 @@ type Marty struct {
 	Ctx          Context
 }
 
-// sendEvent sends an event to the state machine.
-func (m *Marty) SendEvent(event fsm.EventID) {
-
-	log.Printf("SendEvent: %v\n", event)
-
-	err := m.StateMachine.SendEvent(event, &m.Ctx)
-	if err == fsm.ErrEventRejected {
-		log.Printf("Error: %v\n", event)
-		m.Ctx.ErrorCount += 1
-		m.StateMachine.Current = fsm.Default
-	}
-
-}
 
 func (m *Marty) ResetContext() {
 	m.Ctx = Context{

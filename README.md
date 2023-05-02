@@ -26,8 +26,7 @@ DEVTODO - need short antenna lead
 2023 Apr 27
 
 * The lora machine in TinyGo v27 works but does not have UART2
-* The lora machine in TinyFo v28 does work but does have UART2
-* v28 gives "panic: runtime error at 0x08002157: heap alloc in interrupt"
+* The lora machine in TinyFo v28 has UART2 but gives "panic: runtime error at 0x08002157: heap alloc in interrupt"
 
 So I am going to use the `board_lorae5.go` from v28 in v27
 

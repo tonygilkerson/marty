@@ -1,11 +1,15 @@
 package main
 
 import (
+	"device/arm"
 	"log"
 	"machine"
 	"time"
 
+	"github.com/tonygilkerson/marty/pkg/fsm"
 	"github.com/tonygilkerson/marty/pkg/marty"
+
+	// import "device/arm"
 	"tinygo.org/x/drivers/lora"
 	"tinygo.org/x/drivers/sx126x"
 )
@@ -27,14 +31,16 @@ func main() {
 	// run light
 	led := machine.LED
 	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	runLight(led, 10)
+	runLight(led, 5)
+	log.Printf("Starting...")
+	
 
 	//
 	// 	Setup PIR Sensor and start the event consumer
 	//
 	mbx := marty.New()
-	var pirCh chan string
-	pirCh = make(chan string)
+	var pirCh chan fsm.EventID
+	pirCh = make(chan fsm.EventID)
 	go eventConsumer(pirCh, mbx)
 	setupPIR(pirCh)
 
@@ -48,16 +54,13 @@ func main() {
 	//
 	go publishMetrics(mbx, loraRadio, led)
 
-	// Send metrics every minute even if there is no change
-	// this will act as a heart beat
+	// Reset device every so often
 	for {
 
-		time.Sleep(time.Second * 5)
-		runLight(led, 1)
-
-		// Transmit metrics
-		loraTx(loraRadio, []byte("MBX-HEARTBEAT"))
-
+		time.Sleep(time.Hour * 12)
+		// runLight(led, 30)
+		// log.Printf("SystemReset...")
+		arm.SystemReset()
 	}
 }
 
@@ -68,38 +71,51 @@ func main() {
 // publishMetrics will publish the mbox status via Lora on a schedule
 func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin) {
 
-	var lastArrivedCount, lastDepartedCount, lastErrorCount, lastFalseAlarmCount int
-
+	var lastArrivedCount, lastDepartedCount, lastErrorCount, lastFalseAlarmCount, loopCount int
+	
 	for {
-
+		
 		if mbx.Ctx.ArrivedCount != lastArrivedCount {
 			lastArrivedCount = mbx.Ctx.ArrivedCount
 			log.Printf("Tx: Arrived")
 			loraTx(loraRadio, []byte(marty.Arrived))
+			runLight(led, 2)
 		}
 
 		if mbx.Ctx.DepartedCount != lastDepartedCount {
 			lastDepartedCount = mbx.Ctx.DepartedCount
 			log.Printf("Tx: Departed")
 			loraTx(loraRadio, []byte(marty.Departed))
+			runLight(led, 2)
 		}
 
 		if mbx.Ctx.ErrorCount != lastErrorCount {
 			lastErrorCount = mbx.Ctx.ErrorCount
 			log.Printf("Tx: Error")
 			loraTx(loraRadio, []byte(marty.Error))
+			runLight(led, 2)
 		}
 
 		if mbx.Ctx.FalseAlarmCount != lastFalseAlarmCount {
 			lastFalseAlarmCount = mbx.Ctx.FalseAlarmCount
 			log.Printf("Tx: FalseAlarm")
 			loraTx(loraRadio, []byte(marty.FalseAlarm))
+			runLight(led, 2)
 		}
-
+		
 		// I am not sure what the best delay should be here but if it is too large
 		// multiple Arrivals for example will only get counted as one
 		time.Sleep(time.Second * 5)
-		runLight(led, 2)
+		
+		// Send a heartbeat every minute
+		loopCount += 1
+		if loopCount > 12 {
+			loopCount = 0
+			loraTx(loraRadio, []byte("MBX-HEARTBEAT"))
+			runLight(led, 2)
+		}
+		
+		
 	}
 
 }
@@ -157,39 +173,35 @@ func runLight(led machine.Pin, count int) {
 
 	// blink run light for a bit seconds so I can tell it is starting
 	for i := 0; i < count; i++ {
-		led.High()
-		time.Sleep(time.Millisecond * 50)
 		led.Low()
-		time.Sleep(time.Millisecond * 50)
+		time.Sleep(time.Millisecond * 200)
+		// Do high last because we want it to be off and for some reason
+		// high is off on lore E5 board, strange
+		led.High()
+		time.Sleep(time.Millisecond * 200)
 	}
-	led.Low()
+
 }
 
 // eventConsumer will receive event from the ISRs and send them to the state machine
-func eventConsumer(ch chan string, m *marty.Marty) {
+func eventConsumer(ch chan fsm.EventID, m *marty.Marty) {
+
+	var event fsm.EventID
 	for {
 		// Wait for a change in position
-		event := <-ch
-		// log.Printf("eventConsumer: %v\n", event)
+		event = <-ch
 
-		// DEVTODO consider making the events of type fmt.EventID so I can remove the if statement
-		if event == "FarRising" {
-			m.SendEvent(marty.FarRising)
+		if err := m.StateMachine.SendEvent(event, &m.Ctx); err == fsm.ErrEventRejected {
+			// log.Printf("Error: %v\n", event)
+			m.Ctx.ErrorCount += 1
+			m.StateMachine.Current = fsm.Default
 		}
-		if event == "FarFalling" {
-			m.SendEvent(marty.FarFalling)
-		}
-		if event == "NearRising" {
-			m.SendEvent(marty.NearRising)
-		}
-		if event == "NearFalling" {
-			m.SendEvent(marty.NearFalling)
-		}
+		
 	}
 }
 
 // Setup PIR sensor
-func setupPIR(pirCh chan string) {
+func setupPIR(pirCh chan fsm.EventID) {
 
 	const (
 		pirNear = machine.PB10
@@ -202,9 +214,9 @@ func setupPIR(pirCh chan string) {
 	pirFar.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
 
 		if p.Get() {
-			pirCh <- "FarRising"
+			pirCh <- marty.FarRising
 		} else {
-			pirCh <- "FarFalling"
+			pirCh <- marty.FarFalling
 		}
 
 	})
@@ -214,9 +226,9 @@ func setupPIR(pirCh chan string) {
 	pirNear.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
 
 		if p.Get() {
-			pirCh <- "NearRising"
+			pirCh <- marty.NearRising
 		} else {
-			pirCh <- "NearFalling"
+			pirCh <- marty.NearFalling
 		}
 
 	})

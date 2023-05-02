@@ -32,7 +32,7 @@ func main() {
 	//
 
 	uart := machine.UART2
-	machine.UART2.Configure(machine.UARTConfig{BaudRate: 9600, TX: machine.UART2_TX_PIN, RX: machine.UART2_RX_PIN})
+	machine.UART2.Configure(machine.UARTConfig{BaudRate: 115200, TX: machine.UART2_TX_PIN, RX: machine.UART2_RX_PIN})
 
 
 	//
@@ -68,7 +68,8 @@ func main() {
 
 	loraRadio.LoraConfig(loraConf)
 
-	var count uint
+	var count int
+
 	for {
 		start := time.Now()
 
@@ -93,8 +94,13 @@ func main() {
 		if err != nil {
 			println("TX Error:", err)
 		}
-		count++
-
+		
+		// Send heartbeat about every min
+		count += 1
+		if count > 12 {
+			count = 0
+			uart.Write([]byte("GATEWAY-HEARTBEAT"))
+		}
 		runLight(3)
 	}
 
@@ -107,10 +113,12 @@ func runLight(count int) {
 
 	// blink run light for a bit seconds so I can tell it is starting
 	for i := 0; i < count; i++ {
-		led.High()
-		time.Sleep(time.Millisecond * 200)
 		led.Low()
 		time.Sleep(time.Millisecond * 200)
+	  // Do high last because we want it to be off and for some reason
+		// high is off on lore E5 board, strange
+		led.High()
+		time.Sleep(time.Millisecond * 200)
 	}
-	led.Low()
+
 }
