@@ -85,7 +85,7 @@ func main() {
 			} else if buf != nil {
 				println("Packet Received: len=", len(buf), string(buf))
 				uart.Write(buf)
-				runLight(5)
+				runLight(2)
 			}
 		}
 
@@ -101,7 +101,7 @@ func main() {
 			count = 0
 			uart.Write([]byte("GATEWAY-HEARTBEAT"))
 		}
-		runLight(3)
+		runLight(2)
 	}
 
 }

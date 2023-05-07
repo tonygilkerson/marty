@@ -33,14 +33,13 @@ func main() {
 	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	runLight(led, 5)
 	log.Printf("Starting...")
-	
 
 	//
 	// 	Setup PIR Sensor and start the event consumer
 	//
 	mbx := marty.New()
 	var pirCh chan fsm.EventID
-	pirCh = make(chan fsm.EventID)
+	pirCh = make(chan fsm.EventID, 50)
 	go eventConsumer(pirCh, mbx)
 	setupPIR(pirCh)
 
@@ -72,41 +71,37 @@ func main() {
 func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin) {
 
 	var lastArrivedCount, lastDepartedCount, lastErrorCount, lastFalseAlarmCount, loopCount int
-	
+
 	for {
-		
+
 		if mbx.Ctx.ArrivedCount != lastArrivedCount {
 			lastArrivedCount = mbx.Ctx.ArrivedCount
-			log.Printf("Tx: Arrived")
 			loraTx(loraRadio, []byte(marty.Arrived))
 			runLight(led, 2)
 		}
 
 		if mbx.Ctx.DepartedCount != lastDepartedCount {
 			lastDepartedCount = mbx.Ctx.DepartedCount
-			log.Printf("Tx: Departed")
 			loraTx(loraRadio, []byte(marty.Departed))
 			runLight(led, 2)
 		}
 
 		if mbx.Ctx.ErrorCount != lastErrorCount {
 			lastErrorCount = mbx.Ctx.ErrorCount
-			log.Printf("Tx: Error")
 			loraTx(loraRadio, []byte(marty.Error))
 			runLight(led, 2)
 		}
 
 		if mbx.Ctx.FalseAlarmCount != lastFalseAlarmCount {
 			lastFalseAlarmCount = mbx.Ctx.FalseAlarmCount
-			log.Printf("Tx: FalseAlarm")
 			loraTx(loraRadio, []byte(marty.FalseAlarm))
 			runLight(led, 2)
 		}
-		
+
 		// I am not sure what the best delay should be here but if it is too large
 		// multiple Arrivals for example will only get counted as one
 		time.Sleep(time.Second * 5)
-		
+
 		// Send a heartbeat every minute
 		loopCount += 1
 		if loopCount > 12 {
@@ -114,8 +109,7 @@ func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin)
 			loraTx(loraRadio, []byte("MBX-HEARTBEAT"))
 			runLight(led, 2)
 		}
-		
-		
+
 	}
 
 }
@@ -123,12 +117,23 @@ func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin)
 // loraTx will transmit the current counts then listen for a received message
 func loraTx(loraRadio *sx126x.Device, msg []byte) {
 
-	log.Printf("Send TX size=%v -> %v", len(msg), string(msg))
+	log.Printf("Send TX ------------------------------> %v", string(msg))
 	err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
 	if err != nil {
 		log.Printf("TX Error: %v\n", err)
 	}
 
+	start := time.Now()
+	log.Println("Receiving for 1 seconds")
+	for time.Since(start) < 1*time.Second {
+		buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+		if err != nil {
+			log.Println("RX Error: ", err)
+		} else if buf != nil {
+			log.Println("Packet Received: len=", len(buf), string(buf))
+		}
+	}
+	log.Println("Receiving done.")
 }
 
 // setupLora will setup the lora radio device
@@ -196,12 +201,12 @@ func eventConsumer(ch chan fsm.EventID, m *marty.Marty) {
 			m.Ctx.ErrorCount += 1
 			m.StateMachine.Current = fsm.Default
 		}
-		
+
 	}
 }
 
 // Setup PIR sensor
-func setupPIR(pirCh chan fsm.EventID) {
+func setupPIR(ch chan fsm.EventID) {
 
 	const (
 		pirNear = machine.PB10
@@ -209,26 +214,43 @@ func setupPIR(pirCh chan fsm.EventID) {
 	)
 
 	// Arrive Sensor
-	// pirFar.Configure(machine.PinConfig{Mode: machine.PinInput})
-	pirFar.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
+		pirFar.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
 	pirFar.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
 
+		var msg fsm.EventID
 		if p.Get() {
-			pirCh <- marty.FarRising
+			msg = marty.FarRising
 		} else {
-			pirCh <- marty.FarFalling
+			msg = marty.FarFalling
+		}
+
+		// Use non-blocking send so if the channel buffer is full,
+		// the value will get dropped instead of crashing the system
+		// I have the channel buffer set large so this should never happen
+		select {
+		case ch <- msg:
+		default:
 		}
 
 	})
 
 	// Depart Sensor
-	pirNear.Configure(machine.PinConfig{Mode: machine.PinInput})
+	pirNear.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
 	pirNear.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
 
+		var msg fsm.EventID
 		if p.Get() {
-			pirCh <- marty.NearRising
+			msg = marty.NearRising
 		} else {
-			pirCh <- marty.NearFalling
+			msg = marty.NearFalling
+		}
+
+		// Use non-blocking send so if the channel buffer is full,
+		// the value will get dropped instead of crashing the system
+		// I have the channel buffer set large so this should never happen
+		select {
+		case ch <- msg:
+		default:
 		}
 
 	})
