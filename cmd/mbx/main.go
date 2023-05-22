@@ -8,9 +8,8 @@ import (
 
 	"github.com/tonygilkerson/marty/pkg/fsm"
 	"github.com/tonygilkerson/marty/pkg/marty"
+	"github.com/tonygilkerson/marty/pkg/road"
 
-	// import "device/arm"
-	"tinygo.org/x/drivers/lora"
 	"tinygo.org/x/drivers/sx126x"
 )
 
@@ -46,7 +45,8 @@ func main() {
 	//
 	// 	Setup Lora
 	//
-	loraRadio := setupLora(machine.SPI3)
+	loraRadio := road.SetupLora(machine.SPI3)
+
 
 	//
 	//	Publish Metrics
@@ -76,25 +76,25 @@ func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin)
 
 		if mbx.Ctx.ArrivedCount != lastArrivedCount {
 			lastArrivedCount = mbx.Ctx.ArrivedCount
-			loraTx(loraRadio, []byte(marty.Arrived))
+			road.LoraTx(loraRadio, []byte(marty.Arrived))
 			runLight(led, 2)
 		}
 
 		if mbx.Ctx.DepartedCount != lastDepartedCount {
 			lastDepartedCount = mbx.Ctx.DepartedCount
-			loraTx(loraRadio, []byte(marty.Departed))
+			road.LoraTx(loraRadio, []byte(marty.Departed))
 			runLight(led, 2)
 		}
 
 		if mbx.Ctx.ErrorCount != lastErrorCount {
 			lastErrorCount = mbx.Ctx.ErrorCount
-			loraTx(loraRadio, []byte(marty.Error))
+			road.LoraTx(loraRadio, []byte(marty.Error))
 			runLight(led, 2)
 		}
 
 		if mbx.Ctx.FalseAlarmCount != lastFalseAlarmCount {
 			lastFalseAlarmCount = mbx.Ctx.FalseAlarmCount
-			loraTx(loraRadio, []byte(marty.FalseAlarm))
+			road.LoraTx(loraRadio, []byte(marty.FalseAlarm))
 			runLight(led, 2)
 		}
 
@@ -106,7 +106,7 @@ func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin)
 		loopCount += 1
 		if loopCount > 12 {
 			loopCount = 0
-			loraTx(loraRadio, []byte("MBX-HEARTBEAT"))
+			road.LoraTx(loraRadio, []byte("MBX-HEARTBEAT"))
 			runLight(led, 2)
 		}
 
@@ -114,65 +114,6 @@ func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin)
 
 }
 
-// loraTx will transmit the current counts then listen for a received message
-func loraTx(loraRadio *sx126x.Device, msg []byte) {
-
-	log.Printf("Send TX ------------------------------> %v", string(msg))
-	err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
-	if err != nil {
-		log.Printf("TX Error: %v\n", err)
-	}
-
-	start := time.Now()
-	log.Println("Receiving for 1 seconds")
-	for time.Since(start) < 1*time.Second {
-		buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
-		if err != nil {
-			log.Println("RX Error: ", err)
-		} else if buf != nil {
-			log.Println("Packet Received: len=", len(buf), string(buf))
-		}
-	}
-	log.Println("Receiving done.")
-}
-
-// setupLora will setup the lora radio device
-func setupLora(spi machine.SPI) *sx126x.Device {
-
-	var loraRadio *sx126x.Device
-
-	// Create the driver
-	loraRadio = sx126x.New(spi)
-	loraRadio.SetDeviceType(sx126x.DEVICE_TYPE_SX1262)
-
-	// Create radio controller for target
-	rc := sx126x.NewRadioControl()
-	loraRadio.SetRadioController(rc)
-
-	// Detect the device
-	state := loraRadio.DetectDevice()
-	if !state {
-		panic("sx126x not detected.")
-	}
-
-	loraConf := lora.Config{
-		Freq:           lora.MHz_916_8,
-		Bw:             lora.Bandwidth_125_0,
-		Sf:             lora.SpreadingFactor9,
-		Cr:             lora.CodingRate4_7,
-		HeaderType:     lora.HeaderExplicit,
-		Preamble:       12,
-		Ldr:            lora.LowDataRateOptimizeOff,
-		Iq:             lora.IQStandard,
-		Crc:            lora.CRCOn,
-		SyncWord:       lora.SyncPrivate,
-		LoraTxPowerDBm: 20,
-	}
-
-	loraRadio.LoraConfig(loraConf)
-
-	return loraRadio
-}
 
 func runLight(led machine.Pin, count int) {
 
