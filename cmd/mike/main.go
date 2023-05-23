@@ -69,6 +69,7 @@ func main() {
 			}
 
 			if time.Since(lastHeartbeat) > 60*time.Second {
+				lastHeartbeat = time.Now()
 				log.Println("Heartbeat")
 				road.LoraTx(loraRadio, []byte("HeardSoundHeartbeat"))
 			}
