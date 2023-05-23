@@ -15,7 +15,7 @@ import (
 func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	chRise := make(chan string,1)
+	chRise := make(chan string, 1)
 
 	//
 	// 	Setup Lora
@@ -26,7 +26,6 @@ func main() {
 	// Setup Mic
 	//
 	micDigitalPin := machine.PA9 // if lora-e5
-
 
 	micDigitalPin.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
 	micDigitalPin.SetInterrupt(machine.PinRising, func(p machine.Pin) {
@@ -40,6 +39,7 @@ func main() {
 	})
 
 	lastHeard := time.Now()
+	lastHeartbeat := time.Now()
 	activeSound := false
 
 	// Main loop
@@ -55,26 +55,27 @@ func main() {
 			if !activeSound {
 				activeSound = true
 				log.Println("Sound rising")
-			} else {
-				// fmt.Printf("^")
 			}
-			
+
 		//
 		// Silence
 		//
 		default:
-			time.Sleep(time.Millisecond * 50)
 
-			if activeSound && time.Since(lastHeard) > 1*time.Second {
+			if activeSound && time.Since(lastHeard) > 5*time.Second {
 				activeSound = false
 				log.Println("Sound falling")
 				road.LoraTx(loraRadio, []byte("HeardSound"))
-			} else {
-				// fmt.Printf("x")
 			}
 
+			if time.Since(lastHeartbeat) > 60*time.Second {
+				log.Println("Heartbeat")
+				road.LoraTx(loraRadio, []byte("HeardSoundHeartbeat"))
+			}
+
+			time.Sleep(time.Millisecond * 50)
 		}
-		// fmt.Printf("_")
+
 	}
 
 }
