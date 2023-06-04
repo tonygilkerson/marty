@@ -89,7 +89,7 @@ func main() {
 	for range ticker.C {
 
 		log.Println("------------------MainLoopHeartbeat--------------------")
-		road.LoraTx(loraRadio, []byte("MainLoopHeartbeat"), &loraTxRxMutex)
+		road.LoraTx(loraRadio, []byte("RoadMainLoopHeartbeat"), &loraTxRxMutex)
 
 	}
 
@@ -172,7 +172,7 @@ func mailMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mailbox Heartbeat")
-				road.LoraTx(loraRadio, []byte("MailboxOpenHeartbeat"), mutex)
+				road.LoraTx(loraRadio, []byte("MailboxDoorOpenedHeartbeat"), mutex)
 			}
 			
 		}
@@ -213,7 +213,7 @@ func muleMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mule Heartbeat")
-				// road.LoraTx(loraRadio, []byte("MuleHeartbeat"))
+				road.LoraTx(loraRadio, []byte("MuleAlarmHeartbeat"), mutex)
 			}
 
 		}
