@@ -19,8 +19,8 @@ func TestMartyStateMachine(t *testing.T) {
 	t.Logf("----------------------------------\n")
 	m = New()
 	m.ResetContext()
-	m.SendEvent(FarRising)
-	m.SendEvent(NearRising)
+	m.StateMachine.SendEvent(FarRising,m.Ctx)
+	m.StateMachine.SendEvent(NearRising,m.Ctx)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 1 &&
@@ -40,8 +40,8 @@ func TestMartyStateMachine(t *testing.T) {
 	t.Logf("----------------------------------\n")
 	m = New()
 	m.ResetContext()
-	m.SendEvent(NearRising)
-	m.SendEvent(FarRising)
+	m.StateMachine.SendEvent(NearRising,m.Ctx)
+	m.StateMachine.SendEvent(FarRising,m.Ctx)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -62,8 +62,8 @@ func TestMartyStateMachine(t *testing.T) {
 	t.Logf("----------------------------------\n")
 	m = New()
 	m.ResetContext()
-	m.SendEvent(FarRising)
-	m.SendEvent(FarFalling)
+	m.StateMachine.SendEvent(FarRising,m.Ctx)
+	m.StateMachine.SendEvent(FarFalling,m.Ctx)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -83,8 +83,8 @@ func TestMartyStateMachine(t *testing.T) {
 	t.Logf("----------------------------------\n")
 	m = New()
 	m.ResetContext()
-	m.SendEvent(NearRising)
-	m.SendEvent(NearFalling)
+	m.StateMachine.SendEvent(NearRising,m.Ctx)
+	m.StateMachine.SendEvent(NearFalling,m.Ctx)
 
 	if m.Ctx.DefaultCount == 1 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -105,8 +105,8 @@ func TestMartyStateMachine(t *testing.T) {
 	t.Logf("----------------------------------\n")
 	m = New()
 	m.ResetContext()
-	m.SendEvent(NearRising)
-	m.SendEvent(NearRising)
+	m.StateMachine.SendEvent(NearRising,m.Ctx)
+	m.StateMachine.SendEvent(NearRising,m.Ctx)
 
 	if m.Ctx.DefaultCount == 0 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -127,8 +127,8 @@ func TestMartyStateMachine(t *testing.T) {
 	t.Logf("----------------------------------\n")
 	m = New()
 	m.ResetContext()
-	m.SendEvent(FarRising)
-	m.SendEvent(FarRising)
+	m.StateMachine.SendEvent(FarRising,m.Ctx)
+	m.StateMachine.SendEvent(FarRising,m.Ctx)
 
 	if m.Ctx.DefaultCount == 0 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -148,10 +148,10 @@ func TestMartyStateMachine(t *testing.T) {
 	t.Logf("----------------------------------\n")
 	m = New()
 	m.ResetContext()
-	m.SendEvent(NearRising)
-	m.SendEvent(FarRising)
-	m.SendEvent(FarFalling)
-	m.SendEvent(NearFalling)
+	m.StateMachine.SendEvent(NearRising,m.Ctx)
+	m.StateMachine.SendEvent(FarRising,m.Ctx)
+	m.StateMachine.SendEvent(FarFalling,m.Ctx)
+	m.StateMachine.SendEvent(NearFalling,m.Ctx)
 
 	if m.Ctx.DefaultCount == 3 &&
 		m.Ctx.ArrivedCount == 0 &&
@@ -173,8 +173,8 @@ func TestMartyStateMachine(t *testing.T) {
 	t.Logf("----------------------------------\n")
 	m = New()
 	m.ResetContext()
-	m.SendEvent(NearRising)
-	m.SendEvent(FarFalling)
+	m.StateMachine.SendEvent(NearRising,m.Ctx)
+	m.StateMachine.SendEvent(FarFalling,m.Ctx)
 
 
 	if m.Ctx.DefaultCount == 0 &&
@@ -196,8 +196,8 @@ func TestMartyStateMachine(t *testing.T) {
 	t.Logf("----------------------------------\n")
 	m = New()
 	m.ResetContext()
-	m.SendEvent(FarRising)
-	m.SendEvent(NearFalling)
+	m.StateMachine.SendEvent(FarRising,m.Ctx)
+	m.StateMachine.SendEvent(NearFalling,m.Ctx)
 
 
 	if m.Ctx.DefaultCount == 0 &&

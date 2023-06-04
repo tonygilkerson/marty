@@ -1,12 +1,19 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"machine"
+	"sync"
 	"time"
 
 	"github.com/tonygilkerson/marty/pkg/road"
+	"tinygo.org/x/drivers/sx126x"
 )
+
+const HEARTBEAT_DURATION_SECONDS = 60
+const EVENT_DURATION_SECONDS = 3
+const TICKER_MS = 2000
 
 /////////////////////////////////////////////////////////////////////////////
 //			Main
@@ -15,7 +22,10 @@ import (
 func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	chRise := make(chan string, 1)
+	chMicRise := make(chan string, 1)
+	chMuleRise := make(chan string, 1)
+	chMailRise := make(chan string, 1)
+	var loraTxRxMutex sync.Mutex
 
 	//
 	// 	Setup Lora
@@ -25,56 +35,187 @@ func main() {
 	//
 	// Setup Mic
 	//
-	micDigitalPin := machine.PA9 // if lora-e5
-
-	micDigitalPin.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
-	micDigitalPin.SetInterrupt(machine.PinRising, func(p machine.Pin) {
+	micPin := machine.PA9 // D9 if lora-e5
+	micPin.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
+	micPin.SetInterrupt(machine.PinRising, func(p machine.Pin) {
 		// Use non-blocking send so if the channel buffer is full,
 		// the value will get dropped instead of crashing the system
 		select {
-		case chRise <- "rise":
+		case chMicRise <- "Rising":
 		default:
 		}
 
 	})
 
-	lastHeard := time.Now()
-	lastHeartbeat := time.Now()
-	activeSound := false
+	//
+	// Setup Mailbox
+	//
+	mailboxPin := machine.PA0 // D0
+	mailboxPin.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
+	mailboxPin.SetInterrupt(machine.PinRising, func(p machine.Pin) {
+		// Use non-blocking send so if the channel buffer is full,
+		// the value will get dropped instead of crashing the system
+		select {
+		case chMailRise <- "Rising":
+		default:
+		}
+
+	})
+
+	//
+	// Setup Mule
+	//
+	mulePin := machine.PB10 // D10
+	mulePin.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
+	mulePin.SetInterrupt(machine.PinRising, func(p machine.Pin) {
+		// Use non-blocking send so if the channel buffer is full,
+		// the value will get dropped instead of crashing the system
+		select {
+		case chMuleRise <- "Rising":
+		default:
+		}
+
+	})
+
+	//
+	// Launch go routines
+	//
+	go micMonitor(&chMicRise, loraRadio, &loraTxRxMutex)
+	go mailMonitor(&chMailRise, loraRadio, &loraTxRxMutex)
+	go muleMonitor(&chMuleRise, loraRadio, &loraTxRxMutex)
 
 	// Main loop
-	for {
+	ticker := time.NewTicker(time.Second * HEARTBEAT_DURATION_SECONDS)
+	for range ticker.C {
+
+		log.Println("------------------MainLoopHeartbeat--------------------")
+		road.LoraTx(loraRadio, []byte("MainLoopHeartbeat"), &loraTxRxMutex)
+
+	}
+
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+//	Functions
+//
+///////////////////////////////////////////////////////////////////////////////
+
+func micMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
+	lastEvent := time.Now()
+	lastHeartbeat := time.Now()
+	active := false
+
+	ticker := time.NewTicker(time.Millisecond * TICKER_MS)
+	for range ticker.C {
+		fmt.Printf("I")
 
 		select {
-		//
-		// Heard a sound
-		//
-		case <-chRise:
-			lastHeard = time.Now()
 
-			if !activeSound {
-				activeSound = true
+		// Heard a sound
+		case <-*ch:
+
+			lastEvent = time.Now()
+			if !active {
+				active = true
 				log.Println("Sound rising")
+				road.LoraTx(loraRadio, []byte("HeardSound"), mutex)
 			}
 
-		//
 		// Silence
-		//
 		default:
 
-			if activeSound && time.Since(lastHeard) > 5*time.Second {
-				activeSound = false
+			if active && time.Since(lastEvent) > EVENT_DURATION_SECONDS*time.Second {
+				active = false
 				log.Println("Sound falling")
-				road.LoraTx(loraRadio, []byte("HeardSound"))
 			}
 
-			if time.Since(lastHeartbeat) > 60*time.Second {
+			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
-				log.Println("Heartbeat")
-				road.LoraTx(loraRadio, []byte("HeardSoundHeartbeat"))
+				log.Println("Mic Heartbeat")
+				road.LoraTx(loraRadio, []byte("HeardSoundHeartbeat"), mutex)
+			}
+		}
+
+	}
+
+}
+
+func mailMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
+	lastEvent := time.Now()
+	lastHeartbeat := time.Now()
+	active := false
+
+	ticker := time.NewTicker(time.Millisecond * TICKER_MS)
+	for range ticker.C {
+		fmt.Printf("M")
+		select {
+
+		// saw some light
+		case <-*ch:
+
+			lastEvent = time.Now()
+			if !active {
+				active = true
+				log.Println("Mailbox light rising")
+				road.LoraTx(loraRadio, []byte("MailboxDoorOpened"), mutex)
 			}
 
-			time.Sleep(time.Millisecond * 50)
+		// dark
+		default:
+
+			if active && time.Since(lastEvent) > EVENT_DURATION_SECONDS*time.Second {
+				active = false
+				log.Println("Mailbox light falling")
+			}
+
+			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
+				lastHeartbeat = time.Now()
+				log.Println("Mailbox Heartbeat")
+				road.LoraTx(loraRadio, []byte("MailboxOpenHeartbeat"), mutex)
+			}
+			
+		}
+
+	}
+
+}
+
+func muleMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
+	lastEvent := time.Now()
+	lastHeartbeat := time.Now()
+	active := false
+
+	ticker := time.NewTicker(time.Millisecond * TICKER_MS)
+	for range ticker.C {
+		fmt.Printf("U ")
+
+		select {
+
+		// light
+		case <-*ch:
+
+			lastEvent = time.Now()
+			if !active {
+				active = true
+				log.Println("Mule light rising")
+				road.LoraTx(loraRadio, []byte("MuleAlarm"), mutex)
+			}
+
+		// dark
+		default:
+
+			if active && time.Since(lastEvent) > EVENT_DURATION_SECONDS*time.Second {
+				active = false
+				log.Println("Mule light falling")
+			}
+
+			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
+				lastHeartbeat = time.Now()
+				log.Println("Mule Heartbeat")
+				// road.LoraTx(loraRadio, []byte("MuleHeartbeat"))
+			}
+
 		}
 
 	}

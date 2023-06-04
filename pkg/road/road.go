@@ -3,6 +3,7 @@ package road
 import (
 	"log"
 	"machine"
+	"sync"
 	"time"
 
 	"tinygo.org/x/drivers/lora"
@@ -53,23 +54,28 @@ func SetupLora(spi machine.SPI) *sx126x.Device {
 }
 
 // loraTx will transmit the current counts then listen for a received message
-func LoraTx(loraRadio *sx126x.Device, msg []byte) {
+func LoraTx(loraRadio *sx126x.Device, msg []byte, mutex *sync.Mutex) {
+
+	mutex.Lock()
 
 	log.Printf("Send TX ------------------------------> %v", string(msg))
 	err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
 	if err != nil {
-		log.Printf("TX Error: %v\n", err)
+		log.Printf("TX Error: %v, sending msg: %v\n", err,string(msg))
 	}
 
 	start := time.Now()
-	log.Println("Receiving for 1 seconds")
+	log.Printf("Receiving for 1 seconds after msg: %v", string(msg))
 	for time.Since(start) < 1*time.Second {
 		buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
 		if err != nil {
-			log.Println("RX Error: ", err)
+			log.Printf("RX Error: %v, after msg: %v", err, string(msg))
 		} else if buf != nil {
-			log.Println("Packet Received: len=", len(buf), string(buf))
+			log.Printf("Packet Received: %v, after msg: %v", string(buf), string(msg))
 		}
 	}
-	log.Println("Receiving done.")
+	log.Printf("Receiving done after msg: %v", string(msg))
+
+	mutex.Unlock()
+	
 }
