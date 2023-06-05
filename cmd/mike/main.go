@@ -11,7 +11,7 @@ import (
 	"tinygo.org/x/drivers/sx126x"
 )
 
-const HEARTBEAT_DURATION_SECONDS = 60
+const HEARTBEAT_DURATION_SECONDS = 600
 const EVENT_DURATION_SECONDS = 3
 const TICKER_MS = 2000
 
@@ -133,7 +133,7 @@ func micMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mic Heartbeat")
-				road.LoraTx(loraRadio, []byte("HeardSoundHeartbeat"), mutex)
+				// road.LoraTx(loraRadio, []byte("HeardSoundHeartbeat"), mutex)
 			}
 		}
 
@@ -172,7 +172,7 @@ func mailMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mailbox Heartbeat")
-				road.LoraTx(loraRadio, []byte("MailboxDoorOpenedHeartbeat"), mutex)
+				// road.LoraTx(loraRadio, []byte("MailboxDoorOpenedHeartbeat"), mutex)
 			}
 			
 		}
@@ -213,7 +213,7 @@ func muleMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mule Heartbeat")
-				road.LoraTx(loraRadio, []byte("MuleAlarmHeartbeat"), mutex)
+				// road.LoraTx(loraRadio, []byte("MuleAlarmHeartbeat"), mutex)
 			}
 
 		}

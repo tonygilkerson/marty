@@ -65,17 +65,23 @@ func LoraTx(loraRadio *sx126x.Device, msg []byte, mutex *sync.Mutex) {
 	}
 
 	start := time.Now()
-	log.Printf("Receiving for 1 seconds after msg: %v", string(msg))
-	for time.Since(start) < 1*time.Second {
+	log.Printf("Receiving for up to 10 seconds after msg: %v", string(msg))
+	for time.Since(start) < 10*time.Second {
+		log.Printf("loraRadio.Rx...\n")
 		buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
 		if err != nil {
 			log.Printf("RX Error: %v, after msg: %v", err, string(msg))
-		} else if buf != nil {
-			log.Printf("Packet Received: %v, after msg: %v", string(buf), string(msg))
 		}
+		if buf != nil {
+			log.Printf("<----------Packet Received: %v, after msg: %v", string(buf), string(msg))
+			break
+		}
+
 	}
 	log.Printf("Receiving done after msg: %v", string(msg))
-
+	//DEVTODO not sure if this is needed but I feel like we need to wait just a bit before trying to send again
+	//        to give the receiver time to do its thing and start listening agin
+	time.Sleep(time.Millisecond * 5000)
 	mutex.Unlock()
 	
 }
