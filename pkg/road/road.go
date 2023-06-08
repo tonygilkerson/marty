@@ -3,7 +3,6 @@ package road
 import (
 	"log"
 	"machine"
-	"sync"
 	"time"
 
 	"tinygo.org/x/drivers/lora"
@@ -54,34 +53,35 @@ func SetupLora(spi machine.SPI) *sx126x.Device {
 }
 
 // loraTx will transmit the current counts then listen for a received message
-func LoraTx(loraRadio *sx126x.Device, msg []byte, mutex *sync.Mutex) {
+func LoraTx(loraRadio *sx126x.Device, ch *chan []byte) {
 
-	mutex.Lock()
+	for msg := range *ch {
 
-	log.Printf("Send TX ------------------------------> %v", string(msg))
-	err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
-	if err != nil {
-		log.Printf("TX Error: %v, sending msg: %v\n", err,string(msg))
-	}
-
-	start := time.Now()
-	log.Printf("Receiving for up to 10 seconds after msg: %v", string(msg))
-	for time.Since(start) < 10*time.Second {
-		log.Printf("loraRadio.Rx...\n")
-		buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+		log.Printf("Send TX ------------------------------> %v", string(msg))
+		err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
 		if err != nil {
-			log.Printf("RX Error: %v, after msg: %v", err, string(msg))
-		}
-		if buf != nil {
-			log.Printf("<----------Packet Received: %v, after msg: %v", string(buf), string(msg))
-			break
+			log.Printf("TX Error: %v, sending msg: %v\n", err, string(msg))
 		}
 
+		start := time.Now()
+		log.Printf("Receiving for up to 10 seconds after msg: %v", string(msg))
+		for time.Since(start) < 10*time.Second {
+			log.Printf("loraRadio.Rx...\n")
+			buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+			if err != nil {
+				log.Printf("RX Error: %v, after msg: %v", err, string(msg))
+			}
+			if buf != nil {
+				log.Printf("<----------Packet Received: %v, after msg: %v", string(buf), string(msg))
+				break
+			}
+
+		}
+		log.Printf("Receiving done after msg: %v", string(msg))
+		//DEVTODO not sure if this is needed but I feel like we need to wait just a bit before trying to send again
+		//        to give the receiver time to do its thing and start listening agin
+		time.Sleep(time.Millisecond * 5000)
+
 	}
-	log.Printf("Receiving done after msg: %v", string(msg))
-	//DEVTODO not sure if this is needed but I feel like we need to wait just a bit before trying to send again
-	//        to give the receiver time to do its thing and start listening agin
-	time.Sleep(time.Millisecond * 5000)
-	mutex.Unlock()
-	
+
 }

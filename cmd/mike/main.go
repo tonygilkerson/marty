@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"log"
 	"machine"
-	"sync"
 	"time"
 
 	"github.com/tonygilkerson/marty/pkg/road"
 	"tinygo.org/x/drivers/sx126x"
 )
 
-const HEARTBEAT_DURATION_SECONDS = 600
+const HEARTBEAT_DURATION_SECONDS = 300
 const EVENT_DURATION_SECONDS = 3
 const TICKER_MS = 2000
 
@@ -25,7 +24,8 @@ func main() {
 	chMicRise := make(chan string, 1)
 	chMuleRise := make(chan string, 1)
 	chMailRise := make(chan string, 1)
-	var loraTxRxMutex sync.Mutex
+	// I would hope you the channel size would never be larger than ~4 so 250 is large
+	chLoraTxRx := make(chan []byte, 250) 
 
 	//
 	// 	Setup Lora
@@ -80,16 +80,22 @@ func main() {
 	//
 	// Launch go routines
 	//
-	go micMonitor(&chMicRise, loraRadio, &loraTxRxMutex)
-	go mailMonitor(&chMailRise, loraRadio, &loraTxRxMutex)
-	go muleMonitor(&chMuleRise, loraRadio, &loraTxRxMutex)
+	go micMonitor(&chMicRise, loraRadio, &chLoraTxRx)
+	go mailMonitor(&chMailRise, loraRadio, &chLoraTxRx)
+	go muleMonitor(&chMuleRise, loraRadio, &chLoraTxRx)
+	go road.LoraTx(loraRadio,&chLoraTxRx)
+
+	for i := 0; i < 10; i++ {
+		msg := fmt.Sprintf("STARTup-%v",i)
+		chLoraTxRx<-[]byte(msg)	
+	}
 
 	// Main loop
 	ticker := time.NewTicker(time.Second * HEARTBEAT_DURATION_SECONDS)
 	for range ticker.C {
 
 		log.Println("------------------MainLoopHeartbeat--------------------")
-		road.LoraTx(loraRadio, []byte("RoadMainLoopHeartbeat"), &loraTxRxMutex)
+		chLoraTxRx<-[]byte("RoadMainLoopHeartbeat")
 
 	}
 
@@ -101,7 +107,7 @@ func main() {
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-func micMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
+func micMonitor(chEvent *chan string, loraRadio *sx126x.Device, chLoraTxRx *chan []byte) {
 	lastEvent := time.Now()
 	lastHeartbeat := time.Now()
 	active := false
@@ -113,13 +119,13 @@ func micMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 		select {
 
 		// Heard a sound
-		case <-*ch:
+		case <-*chEvent:
 
 			lastEvent = time.Now()
 			if !active {
 				active = true
 				log.Println("Sound rising")
-				road.LoraTx(loraRadio, []byte("HeardSound"), mutex)
+				*chLoraTxRx<-[]byte("HeardSound")
 			}
 
 		// Silence
@@ -133,7 +139,7 @@ func micMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mic Heartbeat")
-				// road.LoraTx(loraRadio, []byte("HeardSoundHeartbeat"), mutex)
+				// *chLoraTxRx<-[]byte("HeardSoundHeartbeat")
 			}
 		}
 
@@ -141,7 +147,7 @@ func micMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 
 }
 
-func mailMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
+func mailMonitor(chEvent *chan string, loraRadio *sx126x.Device, chLoraTxRx *chan []byte) {
 	lastEvent := time.Now()
 	lastHeartbeat := time.Now()
 	active := false
@@ -152,13 +158,13 @@ func mailMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 		select {
 
 		// saw some light
-		case <-*ch:
+		case <-*chEvent:
 
 			lastEvent = time.Now()
 			if !active {
 				active = true
 				log.Println("Mailbox light rising")
-				road.LoraTx(loraRadio, []byte("MailboxDoorOpened"), mutex)
+				*chLoraTxRx<-[]byte("MailboxDoorOpened")
 			}
 
 		// dark
@@ -172,7 +178,7 @@ func mailMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mailbox Heartbeat")
-				// road.LoraTx(loraRadio, []byte("MailboxDoorOpenedHeartbeat"), mutex)
+				//*chLoraTxRx<-[]byte("MailboxDoorOpenedHeartbeat")
 			}
 			
 		}
@@ -181,7 +187,7 @@ func mailMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 
 }
 
-func muleMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
+func muleMonitor(chEvent *chan string, loraRadio *sx126x.Device, chLoraTxRx *chan []byte) {
 	lastEvent := time.Now()
 	lastHeartbeat := time.Now()
 	active := false
@@ -193,13 +199,13 @@ func muleMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 		select {
 
 		// light
-		case <-*ch:
+		case <-*chEvent:
 
 			lastEvent = time.Now()
 			if !active {
 				active = true
 				log.Println("Mule light rising")
-				road.LoraTx(loraRadio, []byte("MuleAlarm"), mutex)
+				*chLoraTxRx<-[]byte("MuleAlarm")
 			}
 
 		// dark
@@ -213,7 +219,7 @@ func muleMonitor(ch *chan string, loraRadio *sx126x.Device, mutex *sync.Mutex) {
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mule Heartbeat")
-				// road.LoraTx(loraRadio, []byte("MuleAlarmHeartbeat"), mutex)
+				// *chLoraTxRx<-[]byte("MuleAlarmHeartbeat")
 			}
 
 		}
