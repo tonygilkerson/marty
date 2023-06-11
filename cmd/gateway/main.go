@@ -18,7 +18,7 @@ const (
 
 var (
 	loraRadio *sx126x.Device
-	txmsg     = []byte("Hi from Gateway")
+	txmsg     = []byte("Hi from TEST Gateway")
 )
 
 func main() {
@@ -79,17 +79,20 @@ func main() {
 
 		println("Receiving for 5 seconds")
 		for time.Since(start) < 5*time.Second {
+			
 			buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
 			if err != nil {
 				println("RX Error: ", err)
-			} else if buf != nil {
+			}
+			
+			if buf != nil {
 				println("Packet Received: len=", len(buf), string(buf))
 				uart.Write(buf)
-				runLight(2)
 			}
+			print(".")
 		}
 
-		println("Send TX size=", len(txmsg), " -> ", string(txmsg))
+		println("Send TX -> ", string(txmsg))
 		err := loraRadio.Tx(txmsg, LORA_DEFAULT_TXTIMEOUT_MS)
 		if err != nil {
 			println("TX Error:", err)
@@ -97,11 +100,11 @@ func main() {
 		
 		// Send heartbeat about every min
 		count += 1
-		if count > 12 {
+		if count > 2 {
 			count = 0
-			uart.Write([]byte("GATEWAY-HEARTBEAT"))
+			uart.Write([]byte("TEST-GATEWAY-HEARTBEAT"))
 		}
-		runLight(2)
+		// runLight(2)
 	}
 
 }

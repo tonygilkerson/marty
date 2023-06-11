@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"tinygo.org/x/drivers/lora"
-	"tinygo.org/x/drivers/sx126x"
+	"tinygo.org/x/drivers/sx127x"
 )
 
 const (
@@ -14,25 +14,47 @@ const (
 	LORA_DEFAULT_TXTIMEOUT_MS = 5000
 )
 
+var (
+	loraRadio *sx127x.Device
+
+	SX127X_PIN_EN   = machine.GP15
+	SX127X_PIN_RST  = machine.GP20
+	SX127X_PIN_CS   = machine.GP17
+	SX127X_PIN_DIO0 = machine.GP21 // (GP21--G0) Must be connected from pico to breakout for radio events IRQ to work
+	SX127X_PIN_DIO1 = machine.GP22 // (GP22--G1)I don't now what this does, it is assigned but I did not connect form pico to breakout
+	SX127X_SPI      = machine.SPI0
+)
+
+func dioIrqHandler(machine.Pin) {
+	loraRadio.HandleInterrupt()
+}
+
 // setupLora will setup the lora radio device
-func SetupLora(spi machine.SPI) *sx126x.Device {
+func SetupLora(spi *machine.SPI) *sx127x.Device {
 
-	var loraRadio *sx126x.Device
+	spi.Configure(machine.SPIConfig{
+		SCK: machine.SPI0_SCK_PIN, // GP18
+		SDO: machine.SPI0_SDO_PIN, // GP19
+		SDI: machine.SPI0_SDI_PIN, // GP16
+	})
 
-	// Create the driver
-	loraRadio = sx126x.New(spi)
-	loraRadio.SetDeviceType(sx126x.DEVICE_TYPE_SX1262)
+	SX127X_SPI.Configure(machine.SPIConfig{Frequency: 500000, Mode: 0})
+	SX127X_PIN_RST.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	SX127X_PIN_EN.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	SX127X_PIN_EN.High() // enable the radio by default
 
-	// Create radio controller for target
-	rc := sx126x.NewRadioControl()
-	loraRadio.SetRadioController(rc)
+	loraRadio = sx127x.New(*SX127X_SPI, SX127X_PIN_RST)
+	loraRadio.SetRadioController(sx127x.NewRadioControl(SX127X_PIN_CS, SX127X_PIN_DIO0, SX127X_PIN_DIO1))
 
-	// Detect the device
+	loraRadio.Reset()
 	state := loraRadio.DetectDevice()
 	if !state {
-		panic("sx126x not detected.")
+		panic("main: sx127x NOT FOUND !!!")
+	} else {
+		log.Println("sx127x found")
 	}
 
+	// Prepare for Lora Operation
 	loraConf := lora.Config{
 		Freq:           lora.MHz_916_8,
 		Bw:             lora.Bandwidth_125_0,
@@ -40,7 +62,6 @@ func SetupLora(spi machine.SPI) *sx126x.Device {
 		Cr:             lora.CodingRate4_7,
 		HeaderType:     lora.HeaderExplicit,
 		Preamble:       12,
-		Ldr:            lora.LowDataRateOptimizeOff,
 		Iq:             lora.IQStandard,
 		Crc:            lora.CRCOn,
 		SyncWord:       lora.SyncPrivate,
@@ -53,35 +74,89 @@ func SetupLora(spi machine.SPI) *sx126x.Device {
 }
 
 // loraTx will transmit the current counts then listen for a received message
-func LoraTx(loraRadio *sx126x.Device, ch *chan []byte) {
+func LoraTx(loraRadio *sx127x.Device, ch *chan []byte) {
 
-	for msg := range *ch {
+	for {
+		
 
-		log.Printf("Send TX ------------------------------> %v", string(msg))
-		err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
-		if err != nil {
-			log.Printf("TX Error: %v, sending msg: %v\n", err, string(msg))
-		}
+		for msg := range *ch {
+			
+			//
+			// RX
+			//
+			tStart := time.Now()
+			log.Println("Receiving Lora for 10 seconds")
+			for time.Since(tStart) < 10*time.Second {
+				buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+				if err != nil {
+					log.Println("RX Error: ", err)
+				} else if buf != nil {
+					log.Println("Packet Received: ", string(buf))
+				}
+			}
+			log.Println("End Lora RX")
 
-		start := time.Now()
-		log.Printf("Receiving for up to 10 seconds after msg: %v", string(msg))
-		for time.Since(start) < 10*time.Second {
-			log.Printf("loraRadio.Rx...\n")
-			buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+			log.Println("Start Lora TX")
+
+			//
+			// TX
+			//
+			log.Println("LORA TX: ", string(msg))
+			err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
 			if err != nil {
-				log.Printf("RX Error: %v, after msg: %v", err, string(msg))
+				log.Println("TX Error:", err)
 			}
-			if buf != nil {
-				log.Printf("<----------Packet Received: %v, after msg: %v", string(buf), string(msg))
-				break
-			}
-
 		}
-		log.Printf("Receiving done after msg: %v", string(msg))
-		//DEVTODO not sure if this is needed but I feel like we need to wait just a bit before trying to send again
-		//        to give the receiver time to do its thing and start listening agin
-		time.Sleep(time.Millisecond * 5000)
+		log.Println("End Lora TX")
 
 	}
 
 }
+
+// sample code delete me soon
+
+// package main
+
+// import (
+// 	"fmt"
+// 	"time"
+// )
+
+// func main() {
+// 	fmt.Println("Hello World")
+// 	ch := make(chan int, 500)
+
+// 	go populate(&ch)
+
+// 	ticker := time.NewTicker(time.Millisecond * 250)
+// 	for range ticker.C {
+// 		// j := <-ch
+// 		fmt.Printf("------------------------------len: %v\n", len(ch))
+
+// 		// for msg := range ch {
+// 		// 	fmt.Printf("msg: %v\t \n", msg)
+// 		// }
+
+// 		for len(ch) > 0 {
+// 			select {
+// 			case msg := <-ch:
+// 				fmt.Printf("msg: %v\t \n", msg)
+// 			default:
+// 				fmt.Println("empty")
+// 			}
+// 		}
+// 		// time.Sleep(time.Millisecond*50)
+// 	}
+// }
+
+// func populate(ch *chan int) {
+// 	v := 0
+
+// 	ticker := time.NewTicker(time.Millisecond * 500)
+// 	for range ticker.C {
+// 		for i := 1; i < 5; i++ {
+// 			v += 1
+// 			*ch <- v
+// 		}
+// 	}
+// }

@@ -1,199 +1,165 @@
 package main
 
 import (
-	"device/arm"
+	"fmt"
 	"log"
 	"machine"
 	"time"
 
-	"github.com/tonygilkerson/marty/pkg/fsm"
-	"github.com/tonygilkerson/marty/pkg/marty"
 	"github.com/tonygilkerson/marty/pkg/road"
-
-	"tinygo.org/x/drivers/sx126x"
+	"tinygo.org/x/drivers/sx127x"
 )
 
 const (
-	LORA_DEFAULT_RXTIMEOUT_MS = 1000
-	LORA_DEFAULT_TXTIMEOUT_MS = 5000
+	HEARTBEAT_DURATION_SECONDS = 300
+	EVENT_DURATION_SECONDS     = 3
+	TICKER_MS                  = 1000
+	ADC_THRESHOLD              = 2_000
 )
 
-///////////////////////////////////////////////////////////////////////////////
-//		main
-///////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+//			Main
+/////////////////////////////////////////////////////////////////////////////
 
 func main() {
 
-	// Log to the console with date, time and filename prepended
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-
+	//
 	// run light
-	led := machine.LED
+	//
+	time.Sleep(1 * time.Second)
+	led := machine.LED //GP25
 	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	runLight(led, 5)
-	log.Printf("Starting...")
+	runLight(led, 20)
 
-	//
-	// 	Setup PIR Sensor and start the event consumer
-	//
-	mbx := marty.New()
-	var pirCh chan fsm.EventID
-	pirCh = make(chan fsm.EventID, 50)
-	go eventConsumer(pirCh, mbx)
-	setupPIR(pirCh)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	// I would hope the channel size would never be larger than ~4 so 250 is large
+	chLoraTxRx := make(chan []byte, 250)
 
 	//
 	// 	Setup Lora
 	//
-	loraRadio := road.SetupLora(machine.SPI3)
-
+	loraRadio := road.SetupLora(machine.SPI0)
 
 	//
-	//	Publish Metrics
+	// Init ADC
 	//
-	go publishMetrics(mbx, loraRadio, led)
+	machine.InitADC() // init the machine's ADC subsystem
 
-	// Reset device every so often
-	for {
+	//
+	// Setup Mule
+	//
+	muleADC := machine.ADC{Pin: machine.ADC0}
 
-		time.Sleep(time.Hour * 12)
-		// runLight(led, 30)
-		// log.Printf("SystemReset...")
-		arm.SystemReset()
+	//
+	// Setup mail
+	//
+	mailADC := machine.ADC{Pin: machine.ADC1}
+
+	//
+	// Launch go routines
+	//
+	go mailMonitor(&mailADC, loraRadio, &chLoraTxRx)
+	go muleMonitor(&muleADC, loraRadio, &chLoraTxRx)
+	go road.LoraTx(loraRadio, &chLoraTxRx)
+
+	// DEVTODO - remove me after test
+	for i := 0; i < 10; i++ {
+		msg := fmt.Sprintf("STARTup-%v", i)
+		chLoraTxRx <- []byte(msg)
 	}
+
+	// Main loop
+	ticker := time.NewTicker(time.Second * HEARTBEAT_DURATION_SECONDS)
+	var count int
+	for range ticker.C {
+
+		log.Printf("------------------MainLoopHeartbeat-------------------- %v", count)
+		msg := fmt.Sprintf("RoadMainLoopHeartbeat-%v", count)
+		chLoraTxRx <- []byte(msg)
+		count += 1
+	}
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//															functions
-//////////////////////////////////////////////////////////////////////////////
-
-// publishMetrics will publish the mbox status via Lora on a schedule
-func publishMetrics(mbx *marty.Marty, loraRadio *sx126x.Device, led machine.Pin) {
-
-	var lastArrivedCount, lastDepartedCount, lastErrorCount, lastFalseAlarmCount, loopCount int
-
-	for {
-
-		if mbx.Ctx.ArrivedCount != lastArrivedCount {
-			lastArrivedCount = mbx.Ctx.ArrivedCount
-			road.LoraTx(loraRadio, []byte(marty.Arrived))
-			runLight(led, 2)
-		}
-
-		if mbx.Ctx.DepartedCount != lastDepartedCount {
-			lastDepartedCount = mbx.Ctx.DepartedCount
-			road.LoraTx(loraRadio, []byte(marty.Departed))
-			runLight(led, 2)
-		}
-
-		if mbx.Ctx.ErrorCount != lastErrorCount {
-			lastErrorCount = mbx.Ctx.ErrorCount
-			road.LoraTx(loraRadio, []byte(marty.Error))
-			runLight(led, 2)
-		}
-
-		if mbx.Ctx.FalseAlarmCount != lastFalseAlarmCount {
-			lastFalseAlarmCount = mbx.Ctx.FalseAlarmCount
-			road.LoraTx(loraRadio, []byte(marty.FalseAlarm))
-			runLight(led, 2)
-		}
-
-		// I am not sure what the best delay should be here but if it is too large
-		// multiple Arrivals for example will only get counted as one
-		time.Sleep(time.Second * 5)
-
-		// Send a heartbeat every minute
-		loopCount += 1
-		if loopCount > 12 {
-			loopCount = 0
-			road.LoraTx(loraRadio, []byte("MBX-HEARTBEAT"))
-			runLight(led, 2)
-		}
-
-	}
-
-}
-
+//
+//	Functions
+//
+///////////////////////////////////////////////////////////////////////////////
 
 func runLight(led machine.Pin, count int) {
 
 	// blink run light for a bit seconds so I can tell it is starting
 	for i := 0; i < count; i++ {
-		led.Low()
-		time.Sleep(time.Millisecond * 200)
-		// Do high last because we want it to be off and for some reason
-		// high is off on lore E5 board, strange
 		led.High()
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 100)
+		led.Low()
+		time.Sleep(time.Millisecond * 100)
+		print("run-")
 	}
 
 }
 
-// eventConsumer will receive event from the ISRs and send them to the state machine
-func eventConsumer(ch chan fsm.EventID, m *marty.Marty) {
+func mailMonitor(mailADC *machine.ADC, loraRadio *sx127x.Device, chLoraTxRx *chan []byte) {
+	lastEvent := time.Now()
+	lastHeartbeat := time.Now()
+	active := false
 
-	var event fsm.EventID
-	for {
-		// Wait for a change in position
-		event = <-ch
+	ticker := time.NewTicker(time.Millisecond * TICKER_MS)
+	for range ticker.C {
+		fmt.Printf("a")
 
-		if err := m.StateMachine.SendEvent(event, &m.Ctx); err == fsm.ErrEventRejected {
-			// log.Printf("Error: %v\n", event)
-			m.Ctx.ErrorCount += 1
-			m.StateMachine.Current = fsm.Default
+		if mailADC.Get() > ADC_THRESHOLD {
+			lastEvent = time.Now()
+			if !active {
+				active = true
+				log.Println("Mailbox light rising")
+				*chLoraTxRx <- []byte("MailboxDoorOpened")
+			}
+		} else {
+
+			if active && time.Since(lastEvent) > EVENT_DURATION_SECONDS*time.Second {
+				active = false
+				log.Println("Mailbox light falling")
+			}
+
+			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
+				lastHeartbeat = time.Now()
+				log.Println("Mailbox Heartbeat")
+				*chLoraTxRx <- []byte("MailboxDoorOpenedHeartbeat")
+			}
 		}
-
 	}
 }
 
-// Setup PIR sensor
-func setupPIR(ch chan fsm.EventID) {
+func muleMonitor(muleADC *machine.ADC, loraRadio *sx127x.Device, chLoraTxRx *chan []byte) {
+	lastEvent := time.Now()
+	lastHeartbeat := time.Now()
+	active := false
 
-	const (
-		pirNear = machine.PB10
-		pirFar  = machine.PA9
-	)
+	ticker := time.NewTicker(time.Millisecond * TICKER_MS)
+	for range ticker.C {
+		fmt.Printf("U")
 
-	// Arrive Sensor
-		pirFar.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
-	pirFar.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
-
-		var msg fsm.EventID
-		if p.Get() {
-			msg = marty.FarRising
+		if muleADC.Get() > ADC_THRESHOLD {
+			lastEvent = time.Now()
+			if !active {
+				active = true
+				log.Println("Mule light rising")
+				*chLoraTxRx <- []byte("MuleAlarm")
+			}
 		} else {
-			msg = marty.FarFalling
+
+			if active && time.Since(lastEvent) > EVENT_DURATION_SECONDS*time.Second {
+				active = false
+				log.Println("Mule light falling")
+			}
+
+			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
+				lastHeartbeat = time.Now()
+				log.Println("Mule Heartbeat")
+				*chLoraTxRx <- []byte("MuleAlarmHeartbeat")
+			}
 		}
-
-		// Use non-blocking send so if the channel buffer is full,
-		// the value will get dropped instead of crashing the system
-		// I have the channel buffer set large so this should never happen
-		select {
-		case ch <- msg:
-		default:
-		}
-
-	})
-
-	// Depart Sensor
-	pirNear.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
-	pirNear.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
-
-		var msg fsm.EventID
-		if p.Get() {
-			msg = marty.NearRising
-		} else {
-			msg = marty.NearFalling
-		}
-
-		// Use non-blocking send so if the channel buffer is full,
-		// the value will get dropped instead of crashing the system
-		// I have the channel buffer set large so this should never happen
-		select {
-		case ch <- msg:
-		default:
-		}
-
-	})
-
+	}
 }
