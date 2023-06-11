@@ -42,6 +42,7 @@ func SetupLora(spi *machine.SPI) *sx127x.Device {
 	SX127X_PIN_RST.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	SX127X_PIN_EN.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	SX127X_PIN_EN.High() // enable the radio by default
+	
 
 	loraRadio = sx127x.New(*SX127X_SPI, SX127X_PIN_RST)
 	loraRadio.SetRadioController(sx127x.NewRadioControl(SX127X_PIN_CS, SX127X_PIN_DIO0, SX127X_PIN_DIO1))
@@ -74,89 +75,68 @@ func SetupLora(spi *machine.SPI) *sx127x.Device {
 }
 
 // loraTx will transmit the current counts then listen for a received message
-func LoraTx(loraRadio *sx127x.Device, ch *chan []byte) {
+func LoraTx(loraRadio *sx127x.Device, ch *chan string) {
 
-	for {
-		
+	ticker := time.NewTicker(time.Second * 10)
+	for range ticker.C {
+		// Enable the radio
+		SX127X_PIN_EN.High()
 
-		for msg := range *ch {
-			
-			//
-			// RX
-			//
-			tStart := time.Now()
-			log.Println("Receiving Lora for 10 seconds")
-			for time.Since(tStart) < 10*time.Second {
-				buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
-				if err != nil {
-					log.Println("RX Error: ", err)
-				} else if buf != nil {
-					log.Println("Packet Received: ", string(buf))
-				}
+		//
+		// RX
+		//
+		tStart := time.Now()
+		log.Println("Receiving Lora for 5 seconds")
+		for time.Since(tStart) < 5*time.Second {
+			buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+			if err != nil {
+				log.Println("RX Error: ", err)
+			} else if buf != nil {
+				log.Println("Packet Received: ", string(buf))
 			}
-			log.Println("End Lora RX")
+		}
+		log.Println("End Lora RX")
 
-			log.Println("Start Lora TX")
+		//
+		// TX
+		//
+		log.Println("Start Lora TX")
+		var batchMsg string
 
-			//
-			// TX
-			//
-			log.Println("LORA TX: ", string(msg))
-			err := loraRadio.Tx(msg, LORA_DEFAULT_TXTIMEOUT_MS)
+		// Concatenate all messages separated by \n
+		eom := false //end of messages
+		for {
+			select {
+			case msg := <-*ch:
+				if len(batchMsg) > 0 {
+					batchMsg = batchMsg + "|" + msg
+				} else {
+					batchMsg = msg
+				}
+			default:
+				eom = true
+			}
+
+			// break out if end of messages
+			if eom {
+				break
+			}
+		}
+
+		if len(batchMsg) > 0 {
+			log.Println("LORA TX: ", batchMsg)
+			err := loraRadio.Tx([]byte(batchMsg), LORA_DEFAULT_TXTIMEOUT_MS)
 			if err != nil {
 				log.Println("TX Error:", err)
 			}
+		} else {
+			log.Println("nothing to send")	
 		}
 		log.Println("End Lora TX")
+
+		// Disable the radio to save power...
+		SX127X_PIN_EN.Low()
 
 	}
 
 }
-
-// sample code delete me soon
-
-// package main
-
-// import (
-// 	"fmt"
-// 	"time"
-// )
-
-// func main() {
-// 	fmt.Println("Hello World")
-// 	ch := make(chan int, 500)
-
-// 	go populate(&ch)
-
-// 	ticker := time.NewTicker(time.Millisecond * 250)
-// 	for range ticker.C {
-// 		// j := <-ch
-// 		fmt.Printf("------------------------------len: %v\n", len(ch))
-
-// 		// for msg := range ch {
-// 		// 	fmt.Printf("msg: %v\t \n", msg)
-// 		// }
-
-// 		for len(ch) > 0 {
-// 			select {
-// 			case msg := <-ch:
-// 				fmt.Printf("msg: %v\t \n", msg)
-// 			default:
-// 				fmt.Println("empty")
-// 			}
-// 		}
-// 		// time.Sleep(time.Millisecond*50)
-// 	}
-// }
-
-// func populate(ch *chan int) {
-// 	v := 0
-
-// 	ticker := time.NewTicker(time.Millisecond * 500)
-// 	for range ticker.C {
-// 		for i := 1; i < 5; i++ {
-// 			v += 1
-// 			*ch <- v
-// 		}
-// 	}
-// }

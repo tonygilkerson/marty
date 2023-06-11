@@ -5,6 +5,7 @@ package main
 
 import (
 	"machine"
+	"strings"
 	"time"
 
 	"tinygo.org/x/drivers/lora"
@@ -18,7 +19,7 @@ const (
 
 var (
 	loraRadio *sx126x.Device
-	txmsg     = []byte("Hi from TEST Gateway")
+	txmsg     = []byte("Hi from Gateway")
 )
 
 func main() {
@@ -30,7 +31,6 @@ func main() {
 	//
 	// setup Uart
 	//
-
 	uart := machine.UART2
 	machine.UART2.Configure(machine.UARTConfig{BaudRate: 115200, TX: machine.UART2_TX_PIN, RX: machine.UART2_RX_PIN})
 
@@ -73,10 +73,9 @@ func main() {
 	for {
 		start := time.Now()
 
-		// println("pinPB10 ", pinPB10.Get())
-		// println("pinPA9 ", pinPA9.Get())
-		// println("pinPA0 ", pinPA0.Get())
-
+		//
+		// 	RX
+		//
 		println("Receiving for 5 seconds")
 		for time.Since(start) < 5*time.Second {
 			
@@ -87,11 +86,18 @@ func main() {
 			
 			if buf != nil {
 				println("Packet Received: len=", len(buf), string(buf))
-				uart.Write(buf)
+				messages := strings.Split(string(buf), "|")
+				for _,msg := range messages {
+					uart.Write([]byte(msg))
+					time.Sleep(time.Millisecond * 50) // Mark the End of a message
+				}
 			}
-			print(".")
+
 		}
 
+		//
+		//	TX
+		//
 		println("Send TX -> ", string(txmsg))
 		err := loraRadio.Tx(txmsg, LORA_DEFAULT_TXTIMEOUT_MS)
 		if err != nil {
@@ -100,11 +106,10 @@ func main() {
 		
 		// Send heartbeat about every min
 		count += 1
-		if count > 2 {
+		if count > 12 {
 			count = 0
-			uart.Write([]byte("TEST-GATEWAY-HEARTBEAT"))
+			uart.Write([]byte("GATEWAY-HEARTBEAT"))
 		}
-		// runLight(2)
 	}
 
 }

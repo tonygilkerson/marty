@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/tonygilkerson/marty/pkg/road"
-	"tinygo.org/x/drivers/sx127x"
 )
 
 const (
@@ -33,7 +32,7 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	// I would hope the channel size would never be larger than ~4 so 250 is large
-	chLoraTxRx := make(chan []byte, 250)
+	chLoraTxRx := make(chan string, 250)
 
 	//
 	// 	Setup Lora
@@ -44,6 +43,7 @@ func main() {
 	// Init ADC
 	//
 	machine.InitADC() // init the machine's ADC subsystem
+	
 
 	//
 	// Setup Mule
@@ -58,15 +58,10 @@ func main() {
 	//
 	// Launch go routines
 	//
-	go mailMonitor(&mailADC, loraRadio, &chLoraTxRx)
-	go muleMonitor(&muleADC, loraRadio, &chLoraTxRx)
+	go mailMonitor(&mailADC, &chLoraTxRx)
+	go muleMonitor(&muleADC, &chLoraTxRx)
+	go temperatureMonitor(&muleADC, &chLoraTxRx)
 	go road.LoraTx(loraRadio, &chLoraTxRx)
-
-	// DEVTODO - remove me after test
-	for i := 0; i < 10; i++ {
-		msg := fmt.Sprintf("STARTup-%v", i)
-		chLoraTxRx <- []byte(msg)
-	}
 
 	// Main loop
 	ticker := time.NewTicker(time.Second * HEARTBEAT_DURATION_SECONDS)
@@ -75,8 +70,14 @@ func main() {
 
 		log.Printf("------------------MainLoopHeartbeat-------------------- %v", count)
 		msg := fmt.Sprintf("RoadMainLoopHeartbeat-%v", count)
-		chLoraTxRx <- []byte(msg)
+		chLoraTxRx <- msg
 		count += 1
+
+		// // DEVTODO - remove me after test
+		// for i := 0; i < 5; i++ {
+		// 	msg := fmt.Sprintf("BATCH-SEND-%v", i)
+		// 	chLoraTxRx <- msg
+		// }
 	}
 
 }
@@ -100,7 +101,7 @@ func runLight(led machine.Pin, count int) {
 
 }
 
-func mailMonitor(mailADC *machine.ADC, loraRadio *sx127x.Device, chLoraTxRx *chan []byte) {
+func mailMonitor(mailADC *machine.ADC, chLoraTxRx *chan string) {
 	lastEvent := time.Now()
 	lastHeartbeat := time.Now()
 	active := false
@@ -114,7 +115,7 @@ func mailMonitor(mailADC *machine.ADC, loraRadio *sx127x.Device, chLoraTxRx *cha
 			if !active {
 				active = true
 				log.Println("Mailbox light rising")
-				*chLoraTxRx <- []byte("MailboxDoorOpened")
+				*chLoraTxRx <- "MailboxDoorOpened"
 			}
 		} else {
 
@@ -126,13 +127,13 @@ func mailMonitor(mailADC *machine.ADC, loraRadio *sx127x.Device, chLoraTxRx *cha
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mailbox Heartbeat")
-				*chLoraTxRx <- []byte("MailboxDoorOpenedHeartbeat")
+				*chLoraTxRx <- "MailboxDoorOpenedHeartbeat"
 			}
 		}
 	}
 }
 
-func muleMonitor(muleADC *machine.ADC, loraRadio *sx127x.Device, chLoraTxRx *chan []byte) {
+func muleMonitor(muleADC *machine.ADC, chLoraTxRx *chan string) {
 	lastEvent := time.Now()
 	lastHeartbeat := time.Now()
 	active := false
@@ -146,7 +147,7 @@ func muleMonitor(muleADC *machine.ADC, loraRadio *sx127x.Device, chLoraTxRx *cha
 			if !active {
 				active = true
 				log.Println("Mule light rising")
-				*chLoraTxRx <- []byte("MuleAlarm")
+				*chLoraTxRx <- "MuleAlarm"
 			}
 		} else {
 
@@ -158,8 +159,20 @@ func muleMonitor(muleADC *machine.ADC, loraRadio *sx127x.Device, chLoraTxRx *cha
 			if time.Since(lastHeartbeat) > HEARTBEAT_DURATION_SECONDS*time.Second {
 				lastHeartbeat = time.Now()
 				log.Println("Mule Heartbeat")
-				*chLoraTxRx <- []byte("MuleAlarmHeartbeat")
+				*chLoraTxRx <- "MuleAlarmHeartbeat"
 			}
 		}
+	}
+}
+
+func temperatureMonitor(muleADC *machine.ADC, chLoraTxRx *chan string) {
+
+	ticker := time.NewTicker(time.Second * HEARTBEAT_DURATION_SECONDS)
+	for range ticker.C {
+		fmt.Printf("T")
+		// F = ( (ReadTemperature /1000) * 9/5) + 32
+		fahrenheit := ( (machine.ReadTemperature()/1000) * 9/5) + 32
+		fmt.Printf("fahrenheit: %v\n", fahrenheit)
+    *chLoraTxRx <- fmt.Sprintf("MailboxTemperature:%v", fahrenheit)
 	}
 }
