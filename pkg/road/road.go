@@ -3,6 +3,7 @@ package road
 import (
 	"log"
 	"machine"
+	"runtime"
 	"time"
 
 	"tinygo.org/x/drivers/lora"
@@ -21,7 +22,7 @@ var (
 	SX127X_PIN_RST  = machine.GP20
 	SX127X_PIN_CS   = machine.GP17
 	SX127X_PIN_DIO0 = machine.GP21 // (GP21--G0) Must be connected from pico to breakout for radio events IRQ to work
-	SX127X_PIN_DIO1 = machine.GP22 // (GP22--G1)I don't now what this does, it is assigned but I did not connect form pico to breakout
+	SX127X_PIN_DIO1 = machine.GP22 // (GP22--G1)I don't now what this does but it seems to need to be connected
 	SX127X_SPI      = machine.SPI0
 )
 
@@ -34,8 +35,8 @@ func SetupLora(spi *machine.SPI) *sx127x.Device {
 
 	spi.Configure(machine.SPIConfig{
 		SCK: machine.SPI0_SCK_PIN, // GP18
-		SDO: machine.SPI0_SDO_PIN, // GP19
-		SDI: machine.SPI0_SDI_PIN, // GP16
+		SDO: machine.SPI0_SDO_PIN, // GP19 aka MOSI
+		SDI: machine.SPI0_SDI_PIN, // GP16 aka MISO
 	})
 
 	SX127X_SPI.Configure(machine.SPIConfig{Frequency: 500000, Mode: 0})
@@ -79,6 +80,15 @@ func LoraTx(loraRadio *sx127x.Device, ch *chan string) {
 
 	ticker := time.NewTicker(time.Second * 10)
 	for range ticker.C {
+
+		//
+		// If there are no messages in the channel then get out quick
+		//
+		if len(*ch) == 0 {
+			log.Println("LoraTx channel is empty, getting out early...")
+			continue
+		}
+
 		// Enable the radio
 		SX127X_PIN_EN.High()
 
@@ -86,21 +96,22 @@ func LoraTx(loraRadio *sx127x.Device, ch *chan string) {
 		// RX
 		//
 		tStart := time.Now()
-		log.Println("Receiving Lora for 5 seconds")
+		log.Println("RX Start - Receiving Lora for 5 seconds")
 		for time.Since(tStart) < 5*time.Second {
+		// for time.Since(tStart) < 2*time.Second {
 			buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
 			if err != nil {
 				log.Println("RX Error: ", err)
 			} else if buf != nil {
-				log.Println("Packet Received: ", string(buf))
+				log.Println("Packet Received: ", buf)
 			}
 		}
-		log.Println("End Lora RX")
+		log.Println("RX End")
 
 		//
 		// TX
 		//
-		log.Println("Start Lora TX")
+		log.Println("TX Start")
 		var batchMsg string
 
 		// Concatenate all messages separated by \n
@@ -123,8 +134,11 @@ func LoraTx(loraRadio *sx127x.Device, ch *chan string) {
 			}
 		}
 
+		//
+		// Now that we have consumed all the messages from the channel Tx
+		//
 		if len(batchMsg) > 0 {
-			log.Println("LORA TX: ", batchMsg)
+			log.Println("TX: ", batchMsg)
 			err := loraRadio.Tx([]byte(batchMsg), LORA_DEFAULT_TXTIMEOUT_MS)
 			if err != nil {
 				log.Println("TX Error:", err)
@@ -132,11 +146,12 @@ func LoraTx(loraRadio *sx127x.Device, ch *chan string) {
 		} else {
 			log.Println("nothing to send")	
 		}
-		log.Println("End Lora TX")
+		log.Println("TX End")
 
 		// Disable the radio to save power...
 		SX127X_PIN_EN.Low()
 
+		runtime.Gosched()
 	}
 
 }
