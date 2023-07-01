@@ -1,24 +1,25 @@
-# Marty
+# MBX-IOT
 
-This project is named after [Marty Feldman](https://en.wikipedia.org/wiki/Marty_Feldman) because like Marty it has two bulging "eyes".  In this case the eyes are two [PIR motion sensors](https://learn.adafruit.com/pir-passive-infrared-proximity-motion-sensor/overview) use to detect cars arriving and departing on my street. It also has a motion sensor that will alert me of mail delivery.  The unit is mounted on my mail post perfect for detecting mail delivery and watching for cars.
+This repo contains the software used for my mailbox IoT project, it will:
 
-## State Machine
+* Detect when the U.S. mail has been delivered (when the mailbox door is opened)
+* Detect when a car passes by the mailbox
+* Once detected a message is sent via a radio signal to my house where it is recorded and notifications sent
 
-The main logic is control by a [FSM (Finite State Machine)](https://venilnoronha.io/a-simple-state-machine-framework-in-go) who's states and events are described below:
+![mbx-gateway](img/mbx-gateway.drawio.png)
 
-![mail-mon-state](img/state.drawio.png)
+---
+There are two apps (TinyGo binaries) contained in this repo
 
-The PIR motion sensors will pull a pin high when movement is detected, therefor I listen for `PinRising` and `PinFalling` events to monitor the PIR sensors.
+* **mbx** - This app is loaded on a Raspberry Pi Pico along with several peripheral devices. The unit is contained in a weather proof electrical junction box mounted to my mailbox. It perform the following functions:
+  * detect when the mailbox door is opened
+  * detect when a car passes by
+  * charge the battery from a solar cell
+* **gateway** - This app is loaded on a LoRa-E5 Dev Board that is tethered a server located my the house. The server hosts a K8s cluster running monitoring and alerting software. The **gateway** performs the following functions:
+  * receive radio signals from the **mbx** device
+  * sends the message to an application running in the K8s cluster via serial port
+  * once the messages are received in the K8s cluster they are stored in a time series db so that graphical dashboards and be produced and notifications sent
 
-| Event | Description                                 |
-| ----- | ------------------------------------------- |
-| FR    | "Far Rising" - Far PIR `PinRising` event    |
-| FF    | "Far Falling" - Far PIR `PinFalling` event |
-| NR    | "Near Rising" - Near PIR `PinRising` event      |
-| NF    | "Near Falling" - Near PIR `PinFalling` event   |
+## Devices
 
->Note: Any unhandled event go to the `Error` state
-
-## Prototype 1
-
-![proto1](img/proto1.drawio.png)
+![pico pins](img/pico-pins.png)
