@@ -15,4 +15,3 @@ mkdocs serve
 # Edit content and review changes here:
 open http://127.0.0.1:8000/
 ```
-
