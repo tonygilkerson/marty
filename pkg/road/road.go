@@ -10,46 +10,91 @@ import (
 	"tinygo.org/x/drivers/sx127x"
 )
 
-const (
-	LORA_DEFAULT_RXTIMEOUT_MS = 1000
-	LORA_DEFAULT_TXTIMEOUT_MS = 5000
-)
 
-var (
-	loraRadio *sx127x.Device
-
-	SX127X_PIN_EN   = machine.GP15
-	SX127X_PIN_RST  = machine.GP20
-	SX127X_PIN_CS   = machine.GP17
-	SX127X_PIN_DIO0 = machine.GP21 // (GP21--G0) Must be connected from pico to breakout for radio events IRQ to work
-	SX127X_PIN_DIO1 = machine.GP22 // (GP22--G1)I don't now what this does but it seems to need to be connected
-	SX127X_SPI      = machine.SPI0
-)
-
-func dioIrqHandler(machine.Pin) {
-	loraRadio.HandleInterrupt()
+type Radio struct {
+	SPI  machine.SPI
+	EN   machine.Pin
+	RST  machine.Pin
+	CS   machine.Pin
+	DIO0 machine.Pin
+	DIO1 machine.Pin
+	SCK  machine.Pin
+	SDO  machine.Pin
+	SDI  machine.Pin
+	SxDevice *sx127x.Device
+	txQ *chan string
+	RxTimeoutMs uint32
+	TxTimeoutMs uint32
 }
 
+//
+// DEVTODO - Not sure if/how this is used. I am going to comment out and see what happens
+//           If it is needed then I will need to move it to main
+//
+// func dioIrqHandler(machine.Pin) {
+// 	loraRadio.HandleInterrupt()
+// }
+
 // setupLora will setup the lora radio device
-func SetupLora(spi *machine.SPI) *sx127x.Device {
+func SetupLora(
+	spi machine.SPI,
+	en machine.Pin,
+	rst machine.Pin,
+	cs machine.Pin,
+	dio0 machine.Pin,
+	dio1 machine.Pin,
+	sck machine.Pin,
+	sdo machine.Pin,
+	sdi machine.Pin,
+	sxDevice *sx127x.Device,
+	txQ *chan string,
+	rxTimeoutMs uint32,
+	txTimeoutMs uint32,
+) Radio {
+
+	//
+	// Populate Radio props
+	//
+	var radio Radio
+	radio.SPI = spi
+	radio.EN = en
+	radio.RST = rst
+	radio.CS = cs
+	radio.DIO0 = dio0
+	radio.DIO1 = dio1
+	radio.SCK = sck
+	radio.SDO = sdo
+	radio.SDI = sdi
+
+	if rxTimeoutMs == 0 {
+		radio.RxTimeoutMs = 1000
+	} else {
+		radio.RxTimeoutMs = rxTimeoutMs
+	}
+
+	if txTimeoutMs == 0 {
+		radio.TxTimeoutMs = 1000
+	} else {
+		radio.TxTimeoutMs = txTimeoutMs
+	}
 
 	spi.Configure(machine.SPIConfig{
-		SCK: machine.SPI0_SCK_PIN, // GP18
-		SDO: machine.SPI0_SDO_PIN, // GP19 aka MOSI
-		SDI: machine.SPI0_SDI_PIN, // GP16 aka MISO
+		SCK: sck,
+		SDO: sdo,
+		SDI: sdi,
 	})
 
-	SX127X_SPI.Configure(machine.SPIConfig{Frequency: 500000, Mode: 0})
-	SX127X_PIN_RST.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	SX127X_PIN_EN.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	SX127X_PIN_EN.High() // enable the radio by default
+	spi.Configure(machine.SPIConfig{Frequency: 500000, Mode: 0})
+	rst.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	en.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	en.High() // enable the radio by default
+
 	
+	radio.SxDevice = sx127x.New(spi, rst)
+	radio.SxDevice.SetRadioController(sx127x.NewRadioControl(cs, dio0, dio1))
 
-	loraRadio = sx127x.New(*SX127X_SPI, SX127X_PIN_RST)
-	loraRadio.SetRadioController(sx127x.NewRadioControl(SX127X_PIN_CS, SX127X_PIN_DIO0, SX127X_PIN_DIO1))
-
-	loraRadio.Reset()
-	state := loraRadio.DetectDevice()
+	radio.SxDevice.Reset()
+	state := radio.SxDevice.DetectDevice()
 	if !state {
 		panic("main: sx127x NOT FOUND !!!")
 	} else {
@@ -70,27 +115,29 @@ func SetupLora(spi *machine.SPI) *sx127x.Device {
 		LoraTxPowerDBm: 20,
 	}
 
-	loraRadio.LoraConfig(loraConf)
+	radio.SxDevice.LoraConfig(loraConf)
 
-	return loraRadio
+	radio.txQ = txQ
+	return radio
 }
 
 // loraTx will transmit the current counts then listen for a received message
-func LoraTx(loraRadio *sx127x.Device, ch *chan string) {
+func (radio *Radio) LoraTx() {
+  txQ := radio.txQ
 
 	ticker := time.NewTicker(time.Second * 10)
 	for range ticker.C {
-
 		//
 		// If there are no messages in the channel then get out quick
 		//
-		if len(*ch) == 0 {
+		
+		if len(*txQ) == 0 {
 			log.Println("LoraTx channel is empty, getting out early...")
 			continue
 		}
 
 		// Enable the radio
-		SX127X_PIN_EN.High()
+		radio.EN.High()
 
 		//
 		// RX
@@ -98,8 +145,8 @@ func LoraTx(loraRadio *sx127x.Device, ch *chan string) {
 		tStart := time.Now()
 		log.Println("RX Start - Receiving Lora for 5 seconds")
 		for time.Since(tStart) < 5*time.Second {
-		// for time.Since(tStart) < 2*time.Second {
-			buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
+			// for time.Since(tStart) < 2*time.Second {
+			buf, err := radio.SxDevice.Rx(radio.RxTimeoutMs)
 			if err != nil {
 				log.Println("RX Error: ", err)
 			} else if buf != nil {
@@ -118,7 +165,7 @@ func LoraTx(loraRadio *sx127x.Device, ch *chan string) {
 		eom := false //end of messages
 		for {
 			select {
-			case msg := <-*ch:
+			case msg := <-*txQ:
 				if len(batchMsg) > 0 {
 					batchMsg = batchMsg + "|" + msg
 				} else {
@@ -139,17 +186,17 @@ func LoraTx(loraRadio *sx127x.Device, ch *chan string) {
 		//
 		if len(batchMsg) > 0 {
 			log.Println("TX: ", batchMsg)
-			err := loraRadio.Tx([]byte(batchMsg), LORA_DEFAULT_TXTIMEOUT_MS)
+			err := radio.SxDevice.Tx([]byte(batchMsg), radio.TxTimeoutMs)
 			if err != nil {
 				log.Println("TX Error:", err)
 			}
 		} else {
-			log.Println("nothing to send")	
+			log.Println("nothing to send")
 		}
 		log.Println("TX End")
 
 		// Disable the radio to save power...
-		SX127X_PIN_EN.Low()
+		radio.EN.Low()
 
 		runtime.Gosched()
 	}

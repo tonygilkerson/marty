@@ -11,6 +11,8 @@ This repo uses [mkdocs](https://www.mkdocs.org/) ([help](https://mkdocs.readthed
 **Develop:**
 
 ```sh
+pip3 install mkdocs-same-dir
+
 mkdocs serve
 # Edit content and review changes here:
 open http://127.0.0.1:8000/

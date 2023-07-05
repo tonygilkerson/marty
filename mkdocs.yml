@@ -1,4 +1,13 @@
 site_name: Mail Mon
 site_author: Tony Gilkerson
+docs_dir: .
+site_dir: ../site
 nav:
   - Home: index.md
+  - Components: docs/components.md
+  - Wiring:
+    - mbx: cmd/mbx/wiring.md
+
+plugins:
+  - search
+  - same-dir

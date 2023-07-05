@@ -8,11 +8,20 @@ import (
 	"time"
 
 	"github.com/tonygilkerson/marty/pkg/road"
+	"tinygo.org/x/drivers/sx127x"
 )
 
 const (
-	HEARTBEAT_DURATION_SECONDS = 300
+	// HEARTBEAT_DURATION_SECONDS = 300
+	HEARTBEAT_DURATION_SECONDS = 10
 )
+
+// DEVTODO - I dont know if dioIrqHandler is needed or what it does or how it works
+var loraRadio *sx127x.Device
+
+// func dioIrqHandler(machine.Pin) {
+// 	loraRadio.HandleInterrupt()
+// }
 
 /////////////////////////////////////////////////////////////////////////////
 //			Main
@@ -21,21 +30,38 @@ const (
 func main() {
 
 	//
+	// Named PINs
+	//
+	var chg machine.Pin = machine.GP10
+	var pgood machine.Pin = machine.GP11
+	var mulePin machine.Pin = machine.GP12
+	var mailPin machine.Pin = machine.GP13
+	var en machine.Pin = machine.GP15
+	var sdi machine.Pin = machine.GP16 // machine.SPI0_SDI_PIN
+	var cs machine.Pin = machine.GP17
+	var sck machine.Pin = machine.GP18 // machine.SPI0_SCK_PIN
+	var sdo machine.Pin = machine.GP19 // machine.SPI0_SDO_PIN
+	var rst machine.Pin = machine.GP20
+	var dio0 machine.Pin = machine.GP21 // (GP21--G0) Must be connected from pico to breakout for radio events IRQ to work
+	var dio1 machine.Pin = machine.GP22 // (GP22--G1)I don't now what this does but it seems to need to be connected
+	var led machine.Pin = machine.GPIO25 // GP25 machine.LED
+
+	//
 	// run light
 	//
 	time.Sleep(1 * time.Second)
-	led := machine.LED //GP25
 	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	runLight(led, 20)
+	runLight(led, 10)
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	// I would hope the channel size would never be larger than ~4 so 250 is large
-	chLoraTxRx := make(chan string, 250)
 
 	//
 	// 	Setup Lora
 	//
-	loraRadio := road.SetupLora(machine.SPI0)
+	var loraRadio *sx127x.Device
+	chLoraTxRx := make(chan string, 250) // I would hope the channel size would never be larger than ~4 so 250 is large
+
+	radio := road.SetupLora(*machine.SPI0, en, rst, cs, dio0, dio1, sck, sdo, sdi, loraRadio, &chLoraTxRx, 0, 0)
 
 	//
 	// Setup charger
@@ -43,21 +69,18 @@ func main() {
 
 	// CHG - Charge status (active low) pulls to GND (open drain) lighting the connected led when the battery is charging.
 	// If the battery is charged or the charger is disabled, CHG is disconnected from ground (high impedance) and the LED will be off.
-	chgPin := machine.GP10
-	chgPin.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
-	log.Printf("chgPin status: %v\n", chgPin.Get())
+	chg.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
+	log.Printf("chg status: %v\n", chg.Get())
 
 	// PGOOD - Power Good Status (active low). PGOOD pulls to GND (open drain) lighting the connected led when a valid input source is connected.
 	// If the input power source is not within specified limits, PGOOD is disconnected from ground (high impedance) and the LED will be off.
-	pgoodPin := machine.GP11
-	pgoodPin.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
-	log.Printf("pgoodPin status: %v\n", pgoodPin.Get())
+	pgood.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
+	log.Printf("pgood status: %v\n", pgood.Get())
 
 	//
 	// Setup Mule
 	//
-	muleCh := make(chan string)
-	mulePin := machine.GP12
+	muleInterruptEvents := make(chan string)
 	mulePin.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
 	log.Printf("mulePin status: %v\n", mulePin.Get())
 
@@ -66,7 +89,7 @@ func main() {
 		// Use non-blocking send so if the channel buffer is full,
 		// the value will get dropped instead of crashing the system
 		select {
-		case muleCh <- "up":
+		case muleInterruptEvents <- "up":
 		default:
 		}
 
@@ -75,8 +98,7 @@ func main() {
 	//
 	// Setup mail
 	//
-	mailCh := make(chan string)
-	mailPin := machine.GP13
+	mailInterruptEvents := make(chan string)
 	mailPin.Configure(machine.PinConfig{Mode: machine.PinInputPulldown})
 	log.Printf("mailPin status: %v\n", mulePin.Get())
 
@@ -85,22 +107,24 @@ func main() {
 		// Use non-blocking send so if the channel buffer is full,
 		// the value will get dropped instead of crashing the system
 		select {
-		case mailCh <- "up":
+		case mailInterruptEvents <- "up":
 		default:
 		}
 
 	})
 
 	// Launch go routines
-	go mailMonitor(&mailCh, &chLoraTxRx)
-	go muleMonitor(&muleCh, &chLoraTxRx)
-	go road.LoraTx(loraRadio, &chLoraTxRx)
+
+	go mailMonitor(&mailInterruptEvents, &chLoraTxRx)
+	go muleMonitor(&muleInterruptEvents, &chLoraTxRx)
+	go radio.LoraTx()
 
 	// Main loop
 	ticker := time.NewTicker(time.Second * HEARTBEAT_DURATION_SECONDS)
 	var count int
+	
 	for range ticker.C {
-
+		
 		log.Printf("------------------MainLoopHeartbeat-------------------- %v", count)
 		count += 1
 		log.Printf("mailPin status: %v\n", mailPin.Get())
@@ -114,7 +138,7 @@ func main() {
 		//
 		// send charger status
 		//
-		sendChargerStatus(chgPin, pgoodPin, &chLoraTxRx)
+		sendChargerStatus(chg, pgood, &chLoraTxRx)
 
 		//
 		// Send Temperature to Tx queue
