@@ -12,16 +12,9 @@ import (
 )
 
 const (
-	// HEARTBEAT_DURATION_SECONDS = 300
-	HEARTBEAT_DURATION_SECONDS = 10
+	HEARTBEAT_DURATION_SECONDS = 300
 )
 
-// DEVTODO - I dont know if dioIrqHandler is needed or what it does or how it works
-var loraRadio *sx127x.Device
-
-// func dioIrqHandler(machine.Pin) {
-// 	loraRadio.HandleInterrupt()
-// }
 
 /////////////////////////////////////////////////////////////////////////////
 //			Main
@@ -49,7 +42,6 @@ func main() {
 	//
 	// run light
 	//
-	time.Sleep(1 * time.Second)
 	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	runLight(led, 10)
 
@@ -59,9 +51,10 @@ func main() {
 	// 	Setup Lora
 	//
 	var loraRadio *sx127x.Device
-	chLoraTxRx := make(chan string, 250) // I would hope the channel size would never be larger than ~4 so 250 is large
+	txQ := make(chan string, 250) // I would hope the channel size would never be larger than ~4 so 250 is large
+	rxQ := make(chan string) // this app currently does not do anything with messages received
 
-	radio := road.SetupLora(*machine.SPI0, en, rst, cs, dio0, dio1, sck, sdo, sdi, loraRadio, &chLoraTxRx, 0, 0)
+	radio := road.SetupLora(*machine.SPI0, en, rst, cs, dio0, dio1, sck, sdo, sdi, loraRadio, &txQ, &rxQ, 0, 0, 10, road.TxOnly)
 
 	//
 	// Setup charger
@@ -115,9 +108,9 @@ func main() {
 
 	// Launch go routines
 
-	go mailMonitor(&mailInterruptEvents, &chLoraTxRx)
-	go muleMonitor(&muleInterruptEvents, &chLoraTxRx)
-	go radio.LoraTx()
+	go mailMonitor(&mailInterruptEvents, &txQ)
+	go muleMonitor(&muleInterruptEvents, &txQ)
+	go radio.LoraRxTx()
 
 	// Main loop
 	ticker := time.NewTicker(time.Second * HEARTBEAT_DURATION_SECONDS)
@@ -133,17 +126,17 @@ func main() {
 		//
 		// Send Heartbeat to Tx queue
 		//
-		chLoraTxRx <- "RoadMainLoopHeartbeat"
+		txQ <- "RoadMainLoopHeartbeat"
 
 		//
 		// send charger status
 		//
-		sendChargerStatus(chg, pgood, &chLoraTxRx)
+		sendChargerStatus(chg, pgood, &txQ)
 
 		//
 		// Send Temperature to Tx queue
 		//
-		sendTemperature(&chLoraTxRx)
+		sendTemperature(&txQ)
 
 		runtime.Gosched()
 	}
@@ -169,11 +162,11 @@ func runLight(led machine.Pin, count int) {
 
 }
 
-func mailMonitor(ch *chan string, chLoraTxRx *chan string) {
+func mailMonitor(ch *chan string, txQ *chan string) {
 
 	for range *ch {
 		log.Println("Mailbox light up")
-		*chLoraTxRx <- "MailboxDoorOpened"
+		*txQ <- "MailboxDoorOpened"
 
 		runtime.Gosched()
 		// Wait a long time to give mail man time to shut the door
@@ -184,11 +177,11 @@ func mailMonitor(ch *chan string, chLoraTxRx *chan string) {
 
 }
 
-func muleMonitor(ch *chan string, chLoraTxRx *chan string) {
+func muleMonitor(ch *chan string, txQ *chan string) {
 
 	for range *ch {
 		log.Println("Mule light up")
-		*chLoraTxRx <- "MuleAlarm"
+		*txQ <- "MuleAlarm"
 
 		runtime.Gosched()
 		time.Sleep(time.Second * 4)
@@ -197,31 +190,31 @@ func muleMonitor(ch *chan string, chLoraTxRx *chan string) {
 	}
 }
 
-func sendTemperature(chLoraTxRx *chan string) {
+func sendTemperature(txQ *chan string) {
 
 	// F = ( (ReadTemperature /1000) * 9/5) + 32
 	fahrenheit := ((machine.ReadTemperature() / 1000) * 9 / 5) + 32
 	fmt.Printf("fahrenheit: %v\n", fahrenheit)
-	*chLoraTxRx <- fmt.Sprintf("MailboxTemperature:%v", fahrenheit)
+	*txQ <- fmt.Sprintf("MailboxTemperature:%v", fahrenheit)
 
 }
 
-func sendChargerStatus(chgPin machine.Pin, pgoodPin machine.Pin, chLoraTxRx *chan string) {
+func sendChargerStatus(chgPin machine.Pin, pgoodPin machine.Pin, txQ *chan string) {
 
 	if pgoodPin.Get() {
 		log.Println("Power source bad")
-		*chLoraTxRx <- "ChargerPowerSourceBad"
+		*txQ <- "ChargerPowerSourceBad"
 	} else {
 		log.Println("Power source good")
-		*chLoraTxRx <- "ChargerPowerSourceGood"
+		*txQ <- "ChargerPowerSourceGood"
 	}
 
 	if chgPin.Get() {
 		log.Println("Charger off")
-		*chLoraTxRx <- "ChargerChargeStatusOff"
+		*txQ <- "ChargerChargeStatusOff"
 	} else {
 		log.Println("Charger on")
-		*chLoraTxRx <- "ChargerChargeStatusOn"
+		*txQ <- "ChargerChargeStatusOn"
 	}
 
 }

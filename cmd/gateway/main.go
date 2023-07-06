@@ -1,132 +1,131 @@
 package main
 
-// In this example, a Lora packet will be sent every 10s
-// module will be in RX mode between two transmissions
-
 import (
+	"log"
 	"machine"
+	"runtime"
 	"strings"
 	"time"
 
-	"tinygo.org/x/drivers/lora"
-	"tinygo.org/x/drivers/sx126x"
+	"github.com/tonygilkerson/marty/pkg/road"
+	"tinygo.org/x/drivers/sx127x"
 )
 
 const (
-	LORA_DEFAULT_RXTIMEOUT_MS = 1000
-	LORA_DEFAULT_TXTIMEOUT_MS = 5000
+	// HEARTBEAT_DURATION_SECONDS = 300
+	// TXRX_LOOP_TICKER_DURATION_SECONDS = 300
+	HEARTBEAT_DURATION_SECONDS = 60
+	TXRX_LOOP_TICKER_DURATION_SECONDS = 30
 )
 
-var (
-	loraRadio *sx126x.Device
-	txmsg     = []byte("Hi from Gateway")
-)
+
+/////////////////////////////////////////////////////////////////////////////
+//			Main
+/////////////////////////////////////////////////////////////////////////////
 
 func main() {
-	machine.LED.Configure(machine.PinConfig{Mode: machine.PinOutput})
 
+	//
+	// Named PINs
+	//
+	var en machine.Pin = machine.GP15
+	var sdi machine.Pin = machine.GP16 // machine.SPI0_SDI_PIN
+	var cs machine.Pin = machine.GP17
+	var sck machine.Pin = machine.GP18 // machine.SPI0_SCK_PIN
+	var sdo machine.Pin = machine.GP19 // machine.SPI0_SDO_PIN
+	var rst machine.Pin = machine.GP20
+	var dio0 machine.Pin = machine.GP21 // (GP21--G0) Must be connected from pico to breakout for radio events IRQ to work
+	var dio1 machine.Pin = machine.GP22 // (GP22--G1)I don't now what this does but it seems to need to be connected
+	var uartTx machine.Pin = machine.GP0 // machine.UART0_TX_PIN
+	var uartRx machine.Pin = machine.GP1 // machine.UART0_RX_PIN
+	var led machine.Pin = machine.GPIO25 // GP25 machine.LED
+
+	//
 	// run light
-  runLight(3)
+	//
+	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	runLight(led, 10)
+
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	//
 	// setup Uart
 	//
-	uart := machine.UART2
-	machine.UART2.Configure(machine.UARTConfig{BaudRate: 115200, TX: machine.UART2_TX_PIN, RX: machine.UART2_RX_PIN})
+	machine.UART0.Configure(machine.UARTConfig{BaudRate: 115200, TX: uartTx, RX: uartRx})
 
 
 	//
-	// setup Lora Radio
+	// 	Setup Lora
 	//
+	var loraRadio *sx127x.Device
+	// I am thinking that a batch of message can be half dozen max so 250 should be plenty large
+	txQ := make(chan string, 250) 
+	rxQ := make(chan string, 250) 
 
-	// Create the driver
-	loraRadio = sx126x.New(spi)
-	loraRadio.SetDeviceType(sx126x.DEVICE_TYPE_SX1262)
+	radio := road.SetupLora(*machine.SPI0, en, rst, cs, dio0, dio1, sck, sdo, sdi, loraRadio, &txQ, &rxQ, 0, 0, TXRX_LOOP_TICKER_DURATION_SECONDS, road.TxRx)
 
-	// Create radio controller for target
-	loraRadio.SetRadioController(newRadioControl())
+	// Launch go routines
+	go writeToSerial(&rxQ, machine.UART0)
+	go radio.LoraRxTx()
+	
 
-	// Detect the device
-	state := loraRadio.DetectDevice()
-	if !state {
-		panic("sx126x not detected.")
-	}
-
-	loraConf := lora.Config{
-		Freq:           lora.MHz_916_8,
-		Bw:             lora.Bandwidth_125_0,
-		Sf:             lora.SpreadingFactor9,
-		Cr:             lora.CodingRate4_7,
-		HeaderType:     lora.HeaderExplicit,
-		Preamble:       12,
-		Ldr:            lora.LowDataRateOptimizeOff,
-		Iq:             lora.IQStandard,
-		Crc:            lora.CRCOn,
-		SyncWord:       lora.SyncPrivate,
-		LoraTxPowerDBm: 20,
-	}
-
-	loraRadio.LoraConfig(loraConf)
-
+	// Main loop
+	ticker := time.NewTicker(time.Second * HEARTBEAT_DURATION_SECONDS)
 	var count int
-
-	for {
-		start := time.Now()
-
-		//
-		// 	RX
-		//
-		println("Receiving for 5 seconds")
-		for time.Since(start) < 5*time.Second {
-			
-			buf, err := loraRadio.Rx(LORA_DEFAULT_RXTIMEOUT_MS)
-			if err != nil {
-				println("RX Error: ", err)
-			}
-			
-			if buf != nil {
-				println("Packet Received: len=", len(buf), string(buf))
-				messages := strings.Split(string(buf), "|")
-				for _,msg := range messages {
-					uart.Write([]byte(msg))
-					time.Sleep(time.Millisecond * 50) // Mark the End of a message
-				}
-			}
-
-		}
-
-		//
-		//	TX
-		//
-		println("Send TX -> ", string(txmsg))
-		err := loraRadio.Tx(txmsg, LORA_DEFAULT_TXTIMEOUT_MS)
-		if err != nil {
-			println("TX Error:", err)
-		}
+	
+	for range ticker.C {
 		
-		// Send heartbeat about every min
+		log.Printf("------------------MainLoopHeartbeat-------------------- %v", count)
 		count += 1
-		if count > 12 {
-			count = 0
-			uart.Write([]byte("GATEWAY-HEARTBEAT"))
-		}
+
+		//
+		// Send Heartbeat to Tx queue
+		//
+		txQ <- "GatewayMainLoopHeartbeat"
+
+		runtime.Gosched()
 	}
 
 }
 
-func runLight(count int) {
+///////////////////////////////////////////////////////////////////////////////
+//
+//	Functions
+//
+///////////////////////////////////////////////////////////////////////////////
 
-	// run light
-	led := machine.LED
+func runLight(led machine.Pin, count int) {
 
 	// blink run light for a bit seconds so I can tell it is starting
 	for i := 0; i < count; i++ {
-		led.Low()
-		time.Sleep(time.Millisecond * 200)
-	  // Do high last because we want it to be off and for some reason
-		// high is off on lore E5 board, strange
 		led.High()
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 100)
+		led.Low()
+		time.Sleep(time.Millisecond * 100)
+		print("run-")
 	}
 
 }
+
+func writeToSerial(rxQ *chan string, uart *machine.UART) {
+	var msgBatch string
+
+	for msgBatch = range *rxQ {
+			
+		log.Printf("Message batch: [%v]", msgBatch)
+		
+		messages := strings.Split(string(msgBatch), "|")
+		for _, msg := range messages {
+			log.Printf("Write to serial: [%v]", msg)
+			uart.Write([]byte(msg))
+			time.Sleep(time.Millisecond * 50) // Mark the End of a message
+		}
+	
+		runtime.Gosched()
+
+	}
+
+}
+
+
+

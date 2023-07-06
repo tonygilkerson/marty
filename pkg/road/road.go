@@ -10,21 +10,40 @@ import (
 	"tinygo.org/x/drivers/sx127x"
 )
 
+type CommunicationMode int
+
+// TxOnly
+// The Lora protocol wants you to do both Rx and Tx but if you are a device who's main purpose is to
+// collect and send data only, then the process can be optimized if you set its mode to TxOnly
+// For TxOnly if there is no data to send then the Lora RxTx cycle can be skipped.
+//
+// RxOnly (not needed)
+// If you are a device that need to only receive data, then you have no choice but to do a TxRx every cycle
+//
+// TxRx
+// Do a Tx and Rx each cycle
+const (
+	TxRx CommunicationMode = iota
+	TxOnly
+)
 
 type Radio struct {
-	SPI  machine.SPI
-	EN   machine.Pin
-	RST  machine.Pin
-	CS   machine.Pin
-	DIO0 machine.Pin
-	DIO1 machine.Pin
-	SCK  machine.Pin
-	SDO  machine.Pin
-	SDI  machine.Pin
-	SxDevice *sx127x.Device
-	txQ *chan string
-	RxTimeoutMs uint32
-	TxTimeoutMs uint32
+	SPI               machine.SPI
+	EN                machine.Pin
+	RST               machine.Pin
+	CS                machine.Pin
+	DIO0              machine.Pin
+	DIO1              machine.Pin
+	SCK               machine.Pin
+	SDO               machine.Pin
+	SDI               machine.Pin
+	SxDevice          *sx127x.Device
+	TxQ               *chan string
+	RxQ               *chan string
+	RxTimeoutMs       uint32
+	TxTimeoutMs       uint32
+	TxRxLoopTickerSec uint32
+	CommunicationMode CommunicationMode
 }
 
 //
@@ -48,13 +67,17 @@ func SetupLora(
 	sdi machine.Pin,
 	sxDevice *sx127x.Device,
 	txQ *chan string,
-	rxTimeoutMs uint32,
+	rxQ *chan string,
 	txTimeoutMs uint32,
+	rxTimeoutMs uint32,
+	txRxLoopTickerSec uint32,
+	CommunicationMode CommunicationMode,
 ) Radio {
 
 	//
 	// Populate Radio props
 	//
+
 	var radio Radio
 	radio.SPI = spi
 	radio.EN = en
@@ -78,6 +101,14 @@ func SetupLora(
 		radio.TxTimeoutMs = txTimeoutMs
 	}
 
+	if txRxLoopTickerSec == 0 {
+		radio.TxRxLoopTickerSec = 10
+	} else {
+		radio.TxRxLoopTickerSec = txRxLoopTickerSec
+	}
+
+	radio.CommunicationMode = CommunicationMode
+
 	spi.Configure(machine.SPIConfig{
 		SCK: sck,
 		SDO: sdo,
@@ -89,10 +120,8 @@ func SetupLora(
 	en.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	en.High() // enable the radio by default
 
-	
 	radio.SxDevice = sx127x.New(spi, rst)
 	radio.SxDevice.SetRadioController(sx127x.NewRadioControl(cs, dio0, dio1))
-
 	radio.SxDevice.Reset()
 	state := radio.SxDevice.DetectDevice()
 	if !state {
@@ -117,22 +146,23 @@ func SetupLora(
 
 	radio.SxDevice.LoraConfig(loraConf)
 
-	radio.txQ = txQ
+	radio.TxQ = txQ
+	radio.RxQ = rxQ
 	return radio
 }
 
-// loraTx will transmit the current counts then listen for a received message
-func (radio *Radio) LoraTx() {
-  txQ := radio.txQ
+func (radio *Radio) LoraRxTx() {
+	txQ := radio.TxQ
+	rxQ := radio.RxQ
 
-	ticker := time.NewTicker(time.Second * 10)
+	ticker := time.NewTicker(time.Second * time.Duration(radio.TxRxLoopTickerSec))
 	for range ticker.C {
+
 		//
 		// If there are no messages in the channel then get out quick
 		//
-		
-		if len(*txQ) == 0 {
-			log.Println("LoraTx channel is empty, getting out early...")
+		if radio.CommunicationMode == TxOnly && len(*txQ) == 0 {
+			log.Println("txQ is empty, mode=TxOnly so getting out early...")
 			continue
 		}
 
@@ -140,25 +170,34 @@ func (radio *Radio) LoraTx() {
 		radio.EN.High()
 
 		//
-		// RX
+		// RX - Receive
 		//
 		tStart := time.Now()
 		log.Println("RX Start - Receiving Lora for 5 seconds")
 		for time.Since(tStart) < 5*time.Second {
 			// for time.Since(tStart) < 2*time.Second {
 			buf, err := radio.SxDevice.Rx(radio.RxTimeoutMs)
+
 			if err != nil {
 				log.Println("RX Error: ", err)
+
 			} else if buf != nil {
-				log.Println("Packet Received: ", buf)
+
+				log.Printf("RX Packet Received: [%v]", string(buf))
+
+				// Use non-blocking send so if the channel buffer is full,
+				// the value will get dropped instead of crashing the system
+				select {
+				case *rxQ <- string(buf):
+				default:
+				}
+
 			}
 		}
-		log.Println("RX End")
 
 		//
-		// TX
+		// Batch - batch all message in txQ
 		//
-		log.Println("TX Start")
 		var batchMsg string
 
 		// Concatenate all messages separated by \n
@@ -182,7 +221,7 @@ func (radio *Radio) LoraTx() {
 		}
 
 		//
-		// Now that we have consumed all the messages from the channel Tx
+		// TX - Send batch
 		//
 		if len(batchMsg) > 0 {
 			log.Println("TX: ", batchMsg)
@@ -191,9 +230,9 @@ func (radio *Radio) LoraTx() {
 				log.Println("TX Error:", err)
 			}
 		} else {
-			log.Println("nothing to send")
+			log.Println("TX: nothing to send, skipping TX")
 		}
-		log.Println("TX End")
+
 
 		// Disable the radio to save power...
 		radio.EN.Low()
