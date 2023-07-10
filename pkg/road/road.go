@@ -127,7 +127,7 @@ func SetupLora(
 	if !state {
 		panic("main: sx127x NOT FOUND !!!")
 	} else {
-		log.Println("sx127x found")
+		log.Println("road: sx127x found")
 	}
 
 	// Prepare for Lora Operation
@@ -162,7 +162,7 @@ func (radio *Radio) LoraRxTx() {
 		// If there are no messages in the channel then get out quick
 		//
 		if radio.CommunicationMode == TxOnly && len(*txQ) == 0 {
-			log.Println("txQ is empty, mode=TxOnly so getting out early...")
+			log.Println("road.LoraRxTx: txQ is empty, mode=TxOnly so getting out early...")
 			continue
 		}
 
@@ -173,17 +173,17 @@ func (radio *Radio) LoraRxTx() {
 		// RX - Receive
 		//
 		tStart := time.Now()
-		log.Println("RX Start - Receiving Lora for 5 seconds")
+		log.Println("road.LoraRxTx: RX Start - Receiving Lora for 5 seconds")
 		for time.Since(tStart) < 5*time.Second {
-			// for time.Since(tStart) < 2*time.Second {
+
 			buf, err := radio.SxDevice.Rx(radio.RxTimeoutMs)
 
 			if err != nil {
-				log.Println("RX Error: ", err)
+				log.Println("road.LoraRxTx: RX Error: ", err)
 
 			} else if buf != nil {
 
-				log.Printf("RX Packet Received: [%v]", string(buf))
+				log.Printf("road.LoraRxTx: RX Packet Received: [%v]", string(buf))
 
 				// Use non-blocking send so if the channel buffer is full,
 				// the value will get dropped instead of crashing the system
@@ -224,13 +224,13 @@ func (radio *Radio) LoraRxTx() {
 		// TX - Send batch
 		//
 		if len(batchMsg) > 0 {
-			log.Println("TX: ", batchMsg)
+			log.Printf("road.LoraRxTx: TX [%v]", batchMsg)
 			err := radio.SxDevice.Tx([]byte(batchMsg), radio.TxTimeoutMs)
 			if err != nil {
-				log.Println("TX Error:", err)
+				log.Printf("road.LoraRxTx: TX Error [%v]", err)
 			}
 		} else {
-			log.Println("TX: nothing to send, skipping TX")
+			log.Println("road.LoraRxTx: TX nothing to send, skipping TX")
 		}
 
 
